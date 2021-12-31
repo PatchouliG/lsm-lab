@@ -14,7 +14,8 @@ mod skip_list {
 
     type BaseNodeInList<K, V> = Rc<RefCell<BaseNode<K, V>>>;
     type IndexNodeInList<K, V> = Rc<RefCell<IndexNode<K, V>>>;
-    use crate::rand::simple_rand;
+
+    use crate::rand::simple_rand::*;
 
 
     // lowest node  level=0
@@ -42,16 +43,17 @@ mod skip_list {
         indexes: Vec<IndexNodeInList<K, V>>,
         base_head: Option<BaseNodeInList<K, V>>,
         len: usize,
+        r: RefCell<SimpleRand>,
     }
 
-    struct VisitorHandle<K: Copy + PartialOrd, V> {
+    struct VisitorHandle<'a, K: Copy + PartialOrd, V> {
         op: Operation,
         key: K,
         value: Option<V>,
         // some if overwrite
         old_value: Option<V>,
         index_nodes: Vec<IndexNodeInList<K, V>>,
-        max_level: usize,
+        list: &'a SkipList<K, V>,
     }
 
 
@@ -66,9 +68,9 @@ mod skip_list {
     }
 
 
-    impl<K: Copy + PartialOrd, V> VisitorHandle<K, V> {
-        fn with_add_op(key: K, value: V, max_level: usize) -> VisitorHandle<K, V> {
-            VisitorHandle { op: Operation::Add, key, value: Some(value), old_value: None, index_nodes: vec![], max_level }
+    impl<'a, K: Copy + PartialOrd, V> VisitorHandle<'a, K, V> {
+        fn with_add_op(key: K, value: V, skip_list: &SkipList<K, V>) -> VisitorHandle<K, V> {
+            VisitorHandle { op: Operation::Add, key, value: Some(value), old_value: None, index_nodes: vec![], list: skip_list }
         }
         fn add_index_node(&mut self, node: IndexNodeInList<K, V>) {
             self.index_nodes.push(node);
@@ -83,9 +85,26 @@ mod skip_list {
                     if self.key > node_key {
                         let right = n.right.clone();
                         let new_node = SkipList::new_base_node(self.key, self.value.take().unwrap(), right);
-                        n.right = Some(new_node);
-                        // get random level
+                        n.right = Some(new_node.clone());
+
+                        let level = self.list.random_level();
                         // build index node
+
+                        for _ in 0..level {
+                            // get left
+                            // 1. from self.index
+                            // 2. from list.index
+                            let left;
+                            let pop = self.index_nodes.pop();
+                            if pop.is_some() {
+                                left = pop.unwrap();
+                            } else {
+                                left=unimplemented!()
+                            }
+
+                            let index_node = SkipList::new_index_node(self.key,
+                                                                      (left.borrow() as &RefCell<IndexNode<K, V>>).borrow_mut().right.take(), IndexNodeChild::Base(new_node.clone()));
+                        }
                         // fix index node right  on the search path
                     } else {
                         //     override exit node value
@@ -95,7 +114,6 @@ mod skip_list {
                 Operation::Remove => {}
             }
         }
-        fn handle_index_operation(&self, node: IndexNodeInList<K, V>) {}
     }
 
     #[derive(Copy, Clone)]
@@ -135,7 +153,7 @@ mod skip_list {
 
     impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         pub fn new() -> SkipList<K, V> {
-            SkipList { indexes: Vec::new(), base_head: None, len: 0 }
+            SkipList { indexes: Vec::new(), base_head: None, len: 0, r: RefCell::new(SimpleRand::new()) }
         }
         pub fn to_iter(&self) -> SkipListIter<K, V> {
             SkipListIter { node: self.base_head.clone() }
@@ -146,28 +164,38 @@ mod skip_list {
                 let base_node = SkipList::new_base_node(key, value, None);
                 self.base_head = Some(base_node);
                 self.len += 1;
-
-                // get random level
-                // build index node
-                // add index node to indexs
                 return;
             }
             let head = self.get_head_base();
             // insert to head
             if (head.borrow() as &RefCell<BaseNode<K, V>>).borrow().key.gt(&key) {
-                let new_node = SkipList::new_base_node(key, value, Some(head));
-                self.base_head = Some(new_node);
+                let base_node = SkipList::new_base_node(key, value, Some(head));
+                self.base_head = Some(base_node.clone());
                 self.len += 1;
+
+                // get random level
+                let level = self.random_level();
+                // build index node
+                // add index node to indexs
+                let mut child = IndexNodeChild::Base(base_node);
+                for n in 0..level {
+                    let index_node = SkipList::new_index_node(key, None, child);
+                    self.indexes.push(index_node.clone());
+                    child = IndexNodeChild::Index(index_node);
+                }
+
                 return;
             }
 
-            let mut visitor_handle = VisitorHandle::with_add_op(key, value, max_level(self.len));
+            let mut visitor_handle = VisitorHandle::with_add_op(key, value, self);
             if self.is_one_level() {
                 SkipList::visit_base(key, head, &mut visitor_handle);
                 if visitor_handle.old_value.is_none() { self.len += 1; }
                 return;
             }
             SkipList::visit_level(key, self.get_head_index(), &mut visitor_handle);
+            if visitor_handle.old_value.is_none() { self.len += 1; }
+            return;
             // todo add 1 if add succese
             // self.len++1;
             unimplemented!()
@@ -264,8 +292,11 @@ mod skip_list {
             unimplemented!()
         }
 
-        fn random_level(&mut self, max_level: usize) -> usize {
-            unimplemented!()
+        fn random_level(&self) -> usize {
+            let max_level = max_level(self.len);
+            if max_level == 0 { return 0; }
+            let n = self.r.borrow_mut().next() as usize % max_level;
+            n as usize
         }
     }
     // 1.  find nearest base node
