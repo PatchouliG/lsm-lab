@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![allow(unused_imports)]
-// todo add log debug, trace
 
 // mod skip_list {
 use std::cell::{RefCell, Ref};
@@ -11,7 +10,7 @@ use std::ops::{Deref, DerefMut};
 use std::alloc::handle_alloc_error;
 use std::fs::read_to_string;
 use std::fmt::Display;
-use super::node::BaseNodeInList;
+use super::node::{BaseNode, SkipListIter};
 
 
 type IndexNodeInList<K, V> = Rc<RefCell<IndexNode<K, V>>>;
@@ -31,14 +30,14 @@ struct IndexNode<K: Copy + PartialOrd, V> {
 
 
 enum IndexNodeChild<K: Copy + PartialOrd, V> {
-    Base(BaseNodeInList<K, V>),
+    Base(BaseNode<K, V>),
     Index(IndexNodeInList<K, V>),
 }
 
 struct SkipList<K: Copy + PartialOrd, V> {
     // head_bass_node: Option<BaseNode<K, V>>,
     indexes: Vec<IndexNodeInList<K, V>>,
-    base_head: Option<BaseNodeInList<K, V>>,
+    base_head: Option<BaseNode<K, V>>,
     len: usize,
     r: RefCell<SimpleRand>,
 }
@@ -71,7 +70,7 @@ impl<K: Copy + PartialOrd, V> Context<K, V> {
     fn visit(&mut self, node: IndexNodeInList<K, V>) {
         self.index_nodes.push(node);
     }
-    fn handle_operation(&mut self, node: BaseNodeInList<K, V>) {
+    fn handle_operation(&mut self, node: BaseNode<K, V>) {
         // match self.op {
         //     Operation::Add => {
         //         let mut n = (node.borrow() as &RefCell<BaseNode<K, V>>).borrow_mut();
@@ -119,27 +118,6 @@ enum Operation {
     Remove,
 }
 
-struct SkipListIter<K: Copy + PartialOrd, V> {
-    node: Option<BaseNodeInList<K, V>>,
-}
-
-
-impl<K: Copy + PartialOrd, V> Iterator for SkipListIter<K, V> {
-    type Item = BaseNodeInList<K, V>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let current = self.node.take();
-        match current {
-            Some(n) => {
-                self.node = n.get_right_node();
-                Some(n)
-            }
-            None => {
-                None
-            }
-        }
-    }
-}
 
 use serde::{Serialize, Deserialize};
 
@@ -184,12 +162,12 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         SkipList { indexes: Vec::new(), base_head: None, len: 0, r: RefCell::new(SimpleRand::new()) }
     }
     pub fn to_iter(&self) -> SkipListIter<K, V> {
-        SkipListIter { node: self.base_head.clone() }
+        SkipListIter::new(self.base_head.clone())
     }
     // need handle overrite todo
     pub fn add(&mut self, key: K, value: V) {
         if self.is_empty() {
-            let base_node = BaseNodeInList::new(key, value, None);
+            let base_node = BaseNode::new(key, value, None);
             self.base_head = Some(base_node);
             self.len += 1;
             return;
@@ -197,7 +175,7 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         let head = self.get_head_base();
         // insert to head
         if head.get_key().gt(&key) {
-            let base_node = BaseNodeInList::new(key, value, Some(head));
+            let base_node = BaseNode::new(key, value, Some(head));
             self.base_head = Some(base_node.clone());
             self.len += 1;
 
@@ -245,8 +223,8 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
     // ---------private-------------
 
 
-    fn visit_base(&mut self, key: K, base_node: BaseNodeInList<K, V>, context: Context<K, V>) {
-        let mut node: BaseNodeInList<K, V> = base_node.clone();
+    fn visit_base(&mut self, key: K, base_node: BaseNode<K, V>, context: Context<K, V>) {
+        let mut node: BaseNode<K, V> = base_node.clone();
         let mut last = node.clone();
 
         loop {
@@ -279,7 +257,7 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         }
     }
 
-    fn handle_operation(&mut self, mut base_node: BaseNodeInList<K, V>, mut context: Context<K, V>) {
+    fn handle_operation(&mut self, mut base_node: BaseNode<K, V>, mut context: Context<K, V>) {
         match context.op {
             Operation::Add => {
                 // let mut n = (base_node.borrow() as &RefCell<BaseNode<K, V>>).borrow_mut();
@@ -288,7 +266,7 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
                 // add
                 if context.key > node_key {
                     let right = base_node.get_right_node();
-                    let new_node = BaseNodeInList::new(context.key, context.value.take().unwrap(), right);
+                    let new_node = BaseNode::new(context.key, context.value.take().unwrap(), right);
                     base_node.set_right_node(Some(new_node.clone()));
                     // n.right = Some(new_node.clone());
 
@@ -353,7 +331,7 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         self.indexes.len() == 0
     }
 
-    fn get_head_base(&self) -> BaseNodeInList<K, V> {
+    fn get_head_base(&self) -> BaseNode<K, V> {
         self.base_head.clone().unwrap()
     }
 
@@ -387,6 +365,7 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
 // remember test head ,tail node and empty list
 mod test {
     use super::SkipList;
+    use std::borrow::Borrow;
 
     #[test]
     fn test_new_list() {
@@ -411,15 +390,15 @@ mod test {
         list.to_graph();
         let mut iter = list.to_iter();
         // todo
-        // assert_eq!((&iter.next().unwrap().borrow().key), &-2);
-        // assert_eq!((&iter.next().unwrap().borrow().key), &-1);
-        // assert_eq!((&iter.next().unwrap().borrow().key), &0);
-        // assert_eq!((&iter.next().unwrap().borrow().key), &1);
-        // assert_eq!((&iter.next().unwrap().borrow().key), &2);
-        // assert_eq!((&iter.next().unwrap().borrow().key), &3);
-        // assert_eq!((&iter.next().unwrap().borrow().key), &4);
-        // assert_eq!(iter.next().is_none(), true);
-        // assert_eq!(list.len, 7)
+        assert_eq!((&iter.next().unwrap().borrow().get_key()), &-2);
+        assert_eq!((&iter.next().unwrap().borrow().get_key()), &-1);
+        assert_eq!((&iter.next().unwrap().borrow().get_key()), &0);
+        assert_eq!((&iter.next().unwrap().borrow().get_key()), &1);
+        assert_eq!((&iter.next().unwrap().borrow().get_key()), &2);
+        assert_eq!((&iter.next().unwrap().borrow().get_key()), &3);
+        assert_eq!((&iter.next().unwrap().borrow().get_key()), &4);
+        assert_eq!(iter.next().is_none(), true);
+        assert_eq!(list.len, 7)
     }
 
     #[test]

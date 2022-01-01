@@ -1,26 +1,34 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
+#![allow(unused_imports)]
 use std::rc::Rc;
 use std::cell::{RefCell, Ref, RefMut};
-use derive_getters::Getters;
 
-pub struct BaseNodeInList<K: Copy + PartialOrd, V> {
+pub struct BaseNode<K: Copy + PartialOrd, V> {
     node: Rc<RefCell<BaseNodeInner<K, V>>>,
 }
+// lowest node  level=0
+struct BaseNodeInner<K: Copy + PartialOrd, V> {
+    pub key: K,
+    pub value: V,
+    right: Option<BaseNode<K, V>>,
+}
 
-impl<K: Copy + PartialOrd, V> Clone for BaseNodeInList<K, V> {
+impl<K: Copy + PartialOrd, V> Clone for BaseNode<K, V> {
     fn clone(&self) -> Self {
-        BaseNodeInList { node: self.node.clone() }
+        BaseNode { node: self.node.clone() }
     }
 }
 
-impl<K: Copy + PartialOrd, V> BaseNodeInList<K, V> {
-    pub fn new(key: K, value: V, right: Option<BaseNodeInList<K, V>>) -> BaseNodeInList<K, V> {
-        BaseNodeInList { node: Rc::new(RefCell::new(BaseNodeInner::new(key, value, right))) }
+impl<K: Copy + PartialOrd, V> BaseNode<K, V> {
+    pub fn new(key: K, value: V, right: Option<BaseNode<K, V>>) -> BaseNode<K, V> {
+        BaseNode { node: Rc::new(RefCell::new(BaseNodeInner::new(key, value, right))) }
     }
 
     pub fn get_key(&self) -> K {
         self.get_ref().key
     }
-    pub fn get_right_node(&self) -> Option<BaseNodeInList<K, V>> {
+    pub fn get_right_node(&self) -> Option<BaseNode<K, V>> {
         let n = self.get_ref();
         let res = n.right.clone();
         res
@@ -39,28 +47,37 @@ impl<K: Copy + PartialOrd, V> BaseNodeInList<K, V> {
     }
 }
 
-// lowest node  level=0
-#[derive(Getters)]
-struct BaseNodeInner<K: Copy + PartialOrd, V> {
-    pub key: K,
-    pub value: V,
-    right: Option<BaseNodeInList<K, V>>,
-}
-
 
 impl<K: Copy + PartialOrd, V> BaseNodeInner<K, V> {
-    fn new(key: K, value: V, right: Option<BaseNodeInList<K, V>>) -> BaseNodeInner<K, V> {
+    fn new(key: K, value: V, right: Option<BaseNode<K, V>>) -> BaseNodeInner<K, V> {
         BaseNodeInner { key, value, right }
     }
 }
 
+pub struct SkipListIter<K: Copy + PartialOrd, V> {
+    node: Option<BaseNode<K, V>>,
+}
 
-mod test {
-    use super::BaseNodeInner;
+impl <K: Copy + PartialOrd, V> SkipListIter<K,V>{
+    pub fn new(node:Option<BaseNode<K,V>>) ->Self{
+        SkipListIter{node}
+    }
+}
 
-    fn test() {
-        let n = BaseNodeInner::new(1, 2, None);
-        n.key();
+impl<K: Copy + PartialOrd, V> Iterator for SkipListIter<K, V> {
+    type Item = BaseNode<K, V>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let current = self.node.take();
+        match current {
+            Some(n) => {
+                self.node = n.get_right_node();
+                Some(n)
+            }
+            None => {
+                None
+            }
+        }
     }
 }
 
