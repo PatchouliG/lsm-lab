@@ -1,6 +1,4 @@
 #![allow(dead_code)]
-#![allow(unused_variables)]
-#![allow(unused_imports)]
 
 use std::rc::Rc;
 use std::cell::{RefCell, Ref, RefMut};
@@ -10,7 +8,7 @@ pub struct BaseNode<K: Copy + PartialOrd, V> {
 }
 
 // lowest node  level=0
-struct BaseNodeInner<K: Copy + PartialOrd, V> {
+pub struct BaseNodeInner<K: Copy + PartialOrd, V> {
     pub key: K,
     pub value: V,
     right: Option<BaseNode<K, V>>,
@@ -29,6 +27,16 @@ impl<K: Copy + PartialOrd, V> BaseNode<K, V> {
 
     pub fn get_key(&self) -> K {
         self.get_ref().key
+    }
+    pub fn set_value(&mut self, value: V) {
+        let mut v=self.get_mut_ref();
+        v.value = value;
+    }
+    // pub fn get_value(&self) -> &V {
+    //     &self.get_ref().value
+    // }
+    pub fn get_node(&self) -> Rc<RefCell<BaseNodeInner<K, V>>> {
+        self.node.clone()
     }
     pub fn get_right_node(&self) -> Option<BaseNode<K, V>> {
         let n = self.get_ref();
@@ -84,6 +92,21 @@ pub struct IndexNode<K: Copy + PartialOrd, V> {
     node: Rc<RefCell<IndexNodeInner<K, V>>>,
 }
 
+pub struct IndexNodeIterator<K: Copy + PartialOrd, V> {
+    node: Option<IndexNode<K, V>>,
+}
+
+
+impl<K: Copy + PartialOrd, V> Iterator for IndexNodeIterator<K, V> {
+    type Item = IndexNode<K, V>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let res = self.node.clone();
+        self.node = self.node.as_ref().and_then(|n| n.get_right_node());
+        res
+    }
+}
+
 impl<K: Copy + PartialOrd, V> Clone for IndexNode<K, V> {
     fn clone(&self) -> Self {
         IndexNode { node: self.node.clone() }
@@ -93,6 +116,10 @@ impl<K: Copy + PartialOrd, V> Clone for IndexNode<K, V> {
 impl<K: Copy + PartialOrd, V> IndexNode<K, V> {
     pub fn new(key: K, right: Option<IndexNode<K, V>>, child: IndexNodeChild<K, V>) -> Self <> {
         IndexNode { node: Rc::new(RefCell::new(IndexNodeInner { key, right, child })) }
+    }
+
+    pub fn to_iter(&self) -> IndexNodeIterator<K, V> {
+        IndexNodeIterator { node: Some(self.clone()) }
     }
 
     pub fn get_key(&self) -> K {
@@ -143,5 +170,3 @@ impl<K: Copy + PartialOrd, V> Iterator for SkipListIter<K, V> {
         }
     }
 }
-
-// }
