@@ -295,7 +295,7 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
     }
 
     fn has_index_level(&self) -> bool {
-        self.indexes.len() >= 0
+        self.indexes.len() > 0
     }
 
     fn get_head_base(&self) -> BaseNode<K, V> {
