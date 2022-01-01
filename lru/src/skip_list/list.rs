@@ -2,20 +2,18 @@
 #![allow(unused_variables)]
 #![allow(unused_imports)]
 
-use std::cell::{RefCell, Ref};
-use std::rc::Rc;
-use std::borrow::{Borrow, BorrowMut};
-use std::ops::{Deref, DerefMut};
+use super::node::{BaseNode, IndexNode, IndexNodeChild, SkipListIter};
 use std::alloc::handle_alloc_error;
-use std::fs::read_to_string;
+use std::borrow::{Borrow, BorrowMut};
+use std::cell::{Ref, RefCell};
 use std::fmt::Display;
-use super::node::{BaseNode, SkipListIter, IndexNode, IndexNodeChild};
-
+use std::fs::read_to_string;
+use std::ops::{Deref, DerefMut};
+use std::rc::Rc;
 
 use crate::rand::simple_rand::*;
+use std::collections::{BTreeMap, HashMap};
 use std::iter::Map;
-use std::collections::{HashMap, BTreeMap};
-
 
 struct SkipList<K: Copy + PartialOrd, V> {
     indexes: BTreeMap<usize, IndexNode<K, V>>,
@@ -33,7 +31,6 @@ struct Context<K: Copy + PartialOrd, V> {
     index_nodes: Vec<IndexNode<K, V>>,
 }
 
-
 fn max_level(len: usize) -> usize {
     match len {
         0 => 0,
@@ -44,10 +41,14 @@ fn max_level(len: usize) -> usize {
     }
 }
 
-
 impl<K: Copy + PartialOrd, V> Context<K, V> {
     fn with_add_op(key: K, value: V) -> Context<K, V> {
-        Context { op: Operation::Add, key, value, index_nodes: vec![] }
+        Context {
+            op: Operation::Add,
+            key,
+            value,
+            index_nodes: vec![],
+        }
     }
     fn visit(&mut self, node: IndexNode<K, V>) {
         self.index_nodes.push(node);
@@ -61,9 +62,8 @@ enum Operation {
     Remove,
 }
 
-
-use serde::{Serialize, Deserialize};
-use crate::skip_list::node::BaseNodeInner;
+use crate::skip_list::node::{BaseNodeInner, IndexNodeIterator};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 struct Graph<K, V> {
@@ -73,13 +73,15 @@ struct Graph<K, V> {
 
 impl<K: Display + Copy, V: Display + Copy> Graph<K, V> {
     pub fn new() -> Graph<K, V> {
-        Graph { base: vec![], index: BTreeMap::new() }
+        Graph {
+            base: vec![],
+            index: BTreeMap::new(),
+        }
     }
     pub fn add_base_key(&mut self, k: K, value: V) {
         self.base.push((k, value));
     }
 }
-
 
 impl<K: Copy + PartialOrd + Display + Serialize, V: Display + Copy + Serialize> SkipList<K, V> {
     pub fn to_graph(&self) -> Graph<K, V> {
@@ -89,7 +91,12 @@ impl<K: Copy + PartialOrd + Display + Serialize, V: Display + Copy + Serialize> 
         for i in iterator {
             let key = i.get_key();
 
-            graph.add_base_key(key, (i.get_node().borrow() as &RefCell<BaseNodeInner<K, V>>).borrow().value);
+            graph.add_base_key(
+                key,
+                (i.get_node().borrow() as &RefCell<BaseNodeInner<K, V>>)
+                    .borrow()
+                    .value,
+            );
         }
         for (level_number, level_head) in self.indexes.iter() {
             let mut vec = vec![];
@@ -104,7 +111,6 @@ impl<K: Copy + PartialOrd + Display + Serialize, V: Display + Copy + Serialize> 
         String::from(serde_json::to_string(&self.to_graph()).unwrap())
     }
 
-
     pub fn print(&self) {
         println!("{}", self.to_string());
     }
@@ -112,7 +118,13 @@ impl<K: Copy + PartialOrd + Display + Serialize, V: Display + Copy + Serialize> 
 
 impl<K: Copy + PartialOrd, V> SkipList<K, V> {
     pub fn new() -> SkipList<K, V> {
-        SkipList { indexes: BTreeMap::new(), base_head: None, len: 0, r: RefCell::new(SimpleRand::new()), always_max: false }
+        SkipList {
+            indexes: BTreeMap::new(),
+            base_head: None,
+            len: 0,
+            r: RefCell::new(SimpleRand::new()),
+            always_max: false,
+        }
     }
     pub fn with_max_level() -> SkipList<K, V> {
         let mut res = SkipList::new();
@@ -132,8 +144,8 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
             self.inc_len();
             return;
         }
-        let head = self.get_head_base();
         // insert to head if key is less then head key
+        let head = self.get_head_base();
         if head.get_key().gt(&key) {
             let base_node = BaseNode::new(key, value, Some(head));
             self.base_head = Some(base_node.clone());
@@ -155,6 +167,14 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
     }
     pub fn get(&self, key: K) -> Option<&V> {
         // handle empty
+        // if self.len()==0{
+        //     None
+        // }
+        // if !self.has_index_level(){
+        //     let head = self.get_head_base();
+        //     self.visit_base(head,)
+        //
+        // }
         // handle one level
         // visit by visit handle
         unimplemented!()
@@ -170,7 +190,6 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         self.len
     }
 
-
     // ---------private-------------
 
     fn inc_len(&mut self) {
@@ -178,28 +197,17 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
     }
 
     fn visit_base(&mut self, key: K, base_node: BaseNode<K, V>, context: Context<K, V>) {
-        let mut node: BaseNode<K, V> = base_node.clone();
-        let mut last = node.clone();
-
-        loop {
-            // let n = (node.borrow() as &RefCell<BaseNode<K, V>>).borrow();
-            let current_key = node.get_key();
-            if current_key.le(&key) {
-                last = node.clone();
-                if node.get_right_node().is_some() {
-                    let t = node.get_right_node().unwrap();
-                    node = t;
-                    //     current node is last node
-                } else {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-        self.handle_operation(last, context);
+        assert!(self.len() >= 1);
+        assert!(key >= self.get_head_base().get_key());
+        let node = self
+            .to_iter()
+            .find(|n| {
+                n.get_key() <= key
+                    && (n.get_right_node().is_none() || n.get_right_node().unwrap().get_key() > key)
+            })
+            .unwrap();
+        self.handle_operation(node, context);
     }
-
 
     fn visit_level(&mut self, key: K, index_node: IndexNode<K, V>, mut context: Context<K, V>) {
         assert!(index_node.get_key().le(&key));
@@ -207,8 +215,8 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         let node = <SkipList<K, V>>::find_less_node(&key, index_node);
         let c = node.get_child();
         match c {
-            IndexNodeChild::Base(t) => { self.visit_base(key, t.clone(), context) }
-            IndexNodeChild::Index(t) => { self.visit_level(key, t.clone(), context) }
+            IndexNodeChild::Base(t) => self.visit_base(key, t.clone(), context),
+            IndexNodeChild::Index(t) => self.visit_level(key, t.clone(), context),
         }
     }
 
@@ -239,7 +247,12 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         }
     }
 
-    fn fix_index_nodes(&mut self, key: K, mut index_nodes: Vec<IndexNode<K, V>>, new_node: BaseNode<K, V>) {
+    fn fix_index_nodes(
+        &mut self,
+        key: K,
+        mut index_nodes: Vec<IndexNode<K, V>>,
+        new_node: BaseNode<K, V>,
+    ) {
         let mut child = IndexNodeChild::Base(new_node.clone());
         let level = self.random_level();
         for i in 0..level + 1 {
@@ -249,18 +262,14 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
             let pop = index_nodes.pop();
             let new_index_node = match pop {
                 Some(mut left) => {
-                    let index_node = IndexNode::new(key,
-                                                    left.get_right_node(),
-                                                    child);
+                    let index_node = IndexNode::new(key, left.get_right_node(), child);
                     left.set_right(Some(index_node.clone()));
                     index_node
                 }
                 //     no left node
                 None => {
                     // assert!(self.indexes.get(i).is_none());
-                    let mut index_node = IndexNode::new(key,
-                                                        None,
-                                                        child);
+                    let mut index_node = IndexNode::new(key, None, child);
                     if let Some(n) = self.indexes.get(&i) {
                         index_node.set_right(Some(n.clone()));
                     }
@@ -273,22 +282,16 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         // fix index node right  on the search path
     }
 
-
     fn find_less_node(key: &K, index_node: IndexNode<K, V>) -> IndexNode<K, V> {
-        let mut node: IndexNode<K, V> = index_node.clone();
-        let mut last = node.clone();
-        loop {
-            let current_key = node.get_key();
-            let right_node = node.get_right_node();
-            if current_key.lt(&key) && right_node.is_some() {
-                let t = right_node.unwrap();
-                last = node;
-                node = t;
-            } else {
-                break;
-            }
-        }
-        last
+        assert!(index_node.get_key() <= *key);
+        index_node
+            .to_iter()
+            .find(|n| {
+                n.get_key() <= *key
+                    && (n.get_right_node().is_none()
+                        || n.get_right_node().unwrap().get_key() > *key)
+            })
+            .unwrap()
     }
     fn is_empty(&self) -> bool {
         self.len == 0
@@ -308,7 +311,9 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
 
     fn random_level(&self) -> usize {
         let max_level = max_level(self.len);
-        if max_level == 0 { return 0; }
+        if max_level == 0 {
+            return 0;
+        }
         if self.always_max {
             max_level
         } else {
@@ -322,7 +327,6 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
 // b. find nearest index node in this level
 // c. go to lower level ,if is base to 2, else to b
 // 2. check base node one by one
-
 
 #[cfg(test)]
 // remember test head ,tail node and empty list
@@ -374,7 +378,10 @@ mod test {
         assert_eq!(2, list.len);
 
         list.add(-1, 2);
-        assert_eq!(list.to_string(), r#"{"base":[[-1,2],[1,1],[2,2]],"index":{"0":[-1,2]}}"#);
+        assert_eq!(
+            list.to_string(),
+            r#"{"base":[[-1,2],[1,1],[2,2]],"index":{"0":[-1,2]}}"#
+        );
     }
 
     #[test]
@@ -389,25 +396,45 @@ mod test {
         list.print();
     }
 
-
     fn test_remove_list() {
         //     remove from list
         //     check field
     }
 
     #[test]
+    #[ignore]
+    fn test_get() {
+        let mut list: SkipList<i32, i32> = SkipList::with_max_level();
+        assert!(list.get(2).is_none());
+        list.add(1, 0);
+        assert_eq!(list.get(1).unwrap(), &0);
+        assert!(list.get(2).is_none());
+        list.add(2, 3);
+        assert_eq!(list.get(2).unwrap(), &3);
+        list.add(1, 1);
+        assert_eq!(list.get(1).unwrap(), &1);
+    }
+
+    #[test]
     fn test_print() {
+        let list = build_list();
+        // let g = list.to_graph();
+        let s = list.to_string();
+        assert_eq!(
+            s,
+            r#"{"base":[[0,3],[1,3],[2,3],[5,3],[8,3]],"index":{"0":[0,2,8,5],"1":[0,2,8],"2":[0,8],"3":[0]}}"#
+        );
+        assert_eq!(list.len(), 5);
+        assert_eq!(list.level(), 5 - 1);
+    }
+
+    fn build_list() -> SkipList<i32, i32> {
         let mut list: SkipList<i32, i32> = SkipList::with_max_level();
         list.add(1, 3);
         list.add(5, 3);
         list.add(2, 3);
         list.add(8, 3);
         list.add(0, 3);
-        // let g = list.to_graph();
-        let s = list.to_string();
-        assert_eq!(s, r#"{"base":[[0,3],[1,3],[2,3],[5,3],[8,3]],"index":{"0":[0,2,8,5],"1":[0,2,8],"2":[0,8],"3":[0]}}"#);
-        assert_eq!(list.len(), 5);
-        assert_eq!(list.level(), 5 - 1);
+        list
     }
 }
-
