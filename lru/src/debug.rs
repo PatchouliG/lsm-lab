@@ -23,12 +23,37 @@ mod debug {
 
     #[cfg(test)]
     mod test {
-        use super::A;
+        use serde::{Deserialize, Serialize};
+        use serde_json::Result;
+        use std::ops::Add;
+
+        #[derive(Serialize, Deserialize)]
+        struct Address {
+            street: String,
+            city: String,
+        }
+
+        fn print_an_address() -> Result<()> {
+            // Some data structure.
+            let address = Address {
+                street: "10 Downing Street".to_owned(),
+                city: "London".to_owned(),
+            };
+
+            // Serialize it to a JSON string.
+            let j = serde_json::to_string(&address)?;
+
+            // Print, write to a file, or send to an HTTP server.
+            println!("{}", j);
+            let a :Address=serde_json::from_str(&j)?;
+            println!("{}", a.street);
+
+            Ok(())
+        }
 
         #[test]
-        fn test() {
-            let a = A { a: 3 };
-            a.print();
+        fn test() -> Result<()> {
+            print_an_address()
         }
     }
 }
