@@ -10,10 +10,8 @@ use std::ops::{Deref, DerefMut};
 use std::alloc::handle_alloc_error;
 use std::fs::read_to_string;
 use std::fmt::Display;
-use super::node::{BaseNode, SkipListIter};
+use super::node::{BaseNode, SkipListIter, IndexNode, IndexNodeChild};
 
-
-type IndexNodeInList<K, V> = Rc<RefCell<IndexNode<K, V>>>;
 
 use crate::rand::simple_rand::*;
 use std::thread::sleep;
@@ -21,22 +19,9 @@ use std::iter::Map;
 use std::collections::HashMap;
 
 
-// level >1
-struct IndexNode<K: Copy + PartialOrd, V> {
-    key: K,
-    right: Option<IndexNodeInList<K, V>>,
-    child: IndexNodeChild<K, V>,
-}
-
-
-enum IndexNodeChild<K: Copy + PartialOrd, V> {
-    Base(BaseNode<K, V>),
-    Index(IndexNodeInList<K, V>),
-}
-
 struct SkipList<K: Copy + PartialOrd, V> {
     // head_bass_node: Option<BaseNode<K, V>>,
-    indexes: Vec<IndexNodeInList<K, V>>,
+    indexes: Vec<IndexNode<K, V>>,
     base_head: Option<BaseNode<K, V>>,
     len: usize,
     r: RefCell<SimpleRand>,
@@ -48,7 +33,7 @@ struct Context<K: Copy + PartialOrd, V> {
     value: Option<V>,
     // some if overwrite
     old_value: Option<V>,
-    index_nodes: Vec<IndexNodeInList<K, V>>,
+    index_nodes: Vec<IndexNode<K, V>>,
 }
 
 
@@ -67,7 +52,7 @@ impl<K: Copy + PartialOrd, V> Context<K, V> {
     fn with_add_op(key: K, value: V) -> Context<K, V> {
         Context { op: Operation::Add, key, value: Some(value), old_value: None, index_nodes: vec![] }
     }
-    fn visit(&mut self, node: IndexNodeInList<K, V>) {
+    fn visit(&mut self, node: IndexNode<K, V>) {
         self.index_nodes.push(node);
     }
     fn handle_operation(&mut self, node: BaseNode<K, V>) {
@@ -185,7 +170,7 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
             // add index node to indexs
             let mut child = IndexNodeChild::Base(base_node);
             for n in 0..level {
-                let index_node = SkipList::new_index_node(key, None, child);
+                let index_node = IndexNode::new(key, None, child);
                 self.indexes.push(index_node.clone());
                 child = IndexNodeChild::Index(index_node);
             }
@@ -247,10 +232,10 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
     }
 
 
-    fn visit_level(&mut self, key: K, index_node: IndexNodeInList<K, V>, mut context: Context<K, V>) {
+    fn visit_level(&mut self, key: K, index_node: IndexNode<K, V>, mut context: Context<K, V>) {
         context.visit(index_node.clone());
         let node = <SkipList<K, V>>::find_less_node(&key, index_node);
-        let c = &(node.borrow() as &RefCell<IndexNode<K, V>>).borrow().child;
+        let c = node.get_child();
         match c {
             IndexNodeChild::Base(t) => { self.visit_base(key, t.clone(), context) }
             IndexNodeChild::Index(t) => { self.visit_level(key, t.clone(), context) }
@@ -277,21 +262,21 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
                         // get left
                         // 1. from self.index
                         // 2. from list.index
-                        let left;
+                        let mut left;
                         let pop = context.index_nodes.pop();
                         if pop.is_some() {
                             left = pop.unwrap();
 
-                            let index_node = SkipList::new_index_node(context.key,
-                                                                      (left.borrow() as &RefCell<IndexNode<K, V>>).borrow_mut().right.take(),
-                                                                      IndexNodeChild::Base(new_node.clone()));
-                            (left.borrow() as &RefCell<IndexNode<K, V>>).borrow_mut().right = Some(index_node);
-                            //     no left
+                            let index_node = IndexNode::new(context.key,
+                                                            left.get_right_node(),
+                                                            IndexNodeChild::Base(new_node.clone()));
+                            left.set_right(Some(index_node));
+                            //     no left node
                         } else {
                             assert!(self.indexes.get(i).is_none());
-                            let index_node = SkipList::new_index_node(context.key,
-                                                                      None,
-                                                                      IndexNodeChild::Base(new_node.clone()));
+                            let index_node = IndexNode::new(context.key,
+                                                            None,
+                                                            IndexNodeChild::Base(new_node.clone()));
                             self.indexes.insert(i, index_node);
                         }
                     }
@@ -308,14 +293,13 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
     }
 
 
-    fn find_less_node(key: &K, index_node: IndexNodeInList<K, V>) -> IndexNodeInList<K, V> {
-        let mut node: IndexNodeInList<K, V> = index_node.clone();
+    fn find_less_node(key: &K, index_node: IndexNode<K, V>) -> IndexNode<K, V> {
+        let mut node: IndexNode<K, V> = index_node.clone();
         loop {
-            let n = (node.borrow() as &RefCell<IndexNode<K, V>>).borrow();
-            let current_key = n.key;
-            if current_key.lt(&key) && n.right.is_some() {
-                let t = n.right.as_ref().unwrap().clone();
-                drop(n);
+            let current_key = node.get_key();
+            let right_node = node.get_right_node();
+            if current_key.lt(&key) && right_node.is_some() {
+                let t = right_node.unwrap();
                 node = t;
             } else {
                 break;
@@ -335,13 +319,10 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         self.base_head.clone().unwrap()
     }
 
-    fn get_head_index(&self) -> IndexNodeInList<K, V> {
+    fn get_head_index(&self) -> IndexNode<K, V> {
         (*self.indexes.get(self.indexes.len() - 1).unwrap()).clone()
     }
 
-    fn new_index_node(key: K, right: Option<IndexNodeInList<K, V>>, child: IndexNodeChild<K, V>) -> IndexNodeInList<K, V> {
-        Rc::new(RefCell::new(IndexNode { key, right, child }))
-    }
 
     // fn add_base(&mut self, node: &BaseNode<K, V>) {
     //     unimplemented!()
