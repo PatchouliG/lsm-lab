@@ -59,7 +59,7 @@ impl<K: Copy + PartialOrd, V> Context<K, V> {
 #[derive(Copy, Clone)]
 enum Operation {
     Add,
-    Set,
+    Get,
     Remove,
 }
 
@@ -215,7 +215,7 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
     fn handle_operation(&mut self, mut base_node: BaseNode<K, V>, context: Context<K, V>) {
         match context.op {
             Operation::Add => self.handle_add(&mut base_node, context),
-            Operation::Set => {}
+            Operation::Get => {}
             Operation::Remove => {}
         }
     }
