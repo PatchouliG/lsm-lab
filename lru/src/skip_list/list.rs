@@ -15,6 +15,8 @@ use crate::rand::simple_rand::*;
 use std::collections::{BTreeMap, HashMap};
 use std::iter::Map;
 
+type GetResult<V> = Option<Rc<RefCell<V>>>;
+
 struct SkipList<K: Copy + PartialOrd, V> {
     indexes: BTreeMap<usize, IndexNode<K, V>>,
     base_head: Option<BaseNode<K, V>>,
@@ -56,7 +58,7 @@ impl<K: Copy + PartialOrd, V> Context<K, V> {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 enum Operation {
     Add,
     Get,
@@ -90,7 +92,8 @@ impl<K: Copy + PartialOrd + Display + Serialize, V: Display + Copy + Serialize> 
         let iterator = self.to_iter();
         for node_iter in iterator {
             let key = node_iter.get_key();
-            graph.add_base_key(key, node_iter.get_ref().value);
+            let value = *(node_iter.get_value().borrow() as &RefCell<V>).borrow();
+            graph.add_base_key(key, value);
         }
         for (level_number, level_head) in self.indexes.iter() {
             let mut vec = vec![];
@@ -148,28 +151,42 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
             return;
         }
 
-        let context = Context::with_add_op(key, value);
         // head index is more than key, visit base
-        if !self.has_index_level() || self.get_head_index().unwrap().get_key() > key {
-            self.visit_base(key, head, context);
-            return;
-        }
-        self.visit_level(key, self.get_head_index().unwrap(), context);
+        let (base_node, indexs) =
+            if !self.has_index_level() || self.get_head_index().unwrap().get_key() > key {
+                let base_node = self.search_in_base(key, self.get_head_base());
+                (base_node, vec![])
+            } else {
+                self.search_by_index(key, Operation::Add)
+            };
+        self.handle_add(key, value, base_node, indexs);
         return;
     }
-    pub fn get(&self, key: K) -> Option<&V> {
+    pub fn get(&self, key: K) -> GetResult<V> {
         // handle empty
-        // if self.len()==0{
-        //     None
-        // }
-        // if !self.has_index_level(){
-        //     let head = self.get_head_base();
-        //     self.visit_base(head,)
-        //
-        // }
-        // handle one level
-        // visit by visit handle
-        unimplemented!()
+        if self.len() == 0 {
+            return None;
+        }
+        // check first base node
+        let head = self.get_head_base();
+        if head.get_key() > key {
+            return None;
+        }
+        // handle one level case
+        let node_founded =
+            if !self.has_index_level() || self.get_head_index().unwrap().get_key() > key {
+                let head = self.get_head_base();
+                self.search_in_base(key, head)
+            } else {
+                let (base, _) = self.search_by_index(key, Operation::Get);
+                self.search_in_base(key, base)
+            };
+
+        if node_founded.get_key() == key {
+            return Some(node_founded.get_value());
+        } else {
+            return None;
+        }
     }
     pub fn remove(&mut self, key: K) {
         // handle empty
@@ -188,55 +205,72 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         self.len += 1;
     }
 
-    fn visit_base(&mut self, key: K, base_node: BaseNode<K, V>, context: Context<K, V>) {
+    fn search_in_base(&self, key: K, start_node: BaseNode<K, V>) -> BaseNode<K, V> {
         assert!(self.len() >= 1);
         assert!(key >= self.get_head_base().get_key());
-        let node = self
-            .to_iter()
+        let mut base_node_iter = SkipListIter::new(Some(start_node));
+        let node = base_node_iter
             .find(|n| {
                 n.get_key() <= key
                     && (n.get_right_node().is_none() || n.get_right_node().unwrap().get_key() > key)
             })
             .unwrap();
-        self.handle_operation(node, context);
+        node
     }
 
-    fn visit_level(&mut self, key: K, index_node: IndexNode<K, V>, mut context: Context<K, V>) {
-        assert!(index_node.get_key().le(&key));
-        context.visit(index_node.clone());
-        let node = <SkipList<K, V>>::find_less_node(&key, index_node);
-        let c = node.get_child();
-        match c {
-            IndexNodeChild::Base(t) => self.visit_base(key, t.clone(), context),
-            IndexNodeChild::Index(t) => self.visit_level(key, t.clone(), context),
+    fn search_by_index(&self, key: K, op: Operation) -> (BaseNode<K, V>, Vec<IndexNode<K, V>>) {
+        let mut current_index_node = self.get_head_index().unwrap();
+        let mut res = vec![];
+        assert!(current_index_node.get_key() <= (key));
+        loop {
+            // 1. find the fist node which key is less the search key
+            let first_node = current_index_node
+                .to_iter()
+                .find(|n| {
+                    n.get_key() <= key
+                        && (n.get_right_node().is_none()
+                            || n.get_right_node().unwrap().get_key() > key)
+                })
+                .unwrap();
+            // record if is set/remove op
+            if op == Operation::Add || op == Operation::Remove {
+                res.push(first_node.clone());
+            }
+            let child_node = first_node.get_child();
+            match child_node {
+                //  continue loop
+                IndexNodeChild::Index(n) => {
+                    current_index_node = n;
+                }
+                // return if is base
+                IndexNodeChild::Base(n) => {
+                    return (n, res);
+                }
+            }
         }
     }
 
-    fn handle_operation(&mut self, mut base_node: BaseNode<K, V>, context: Context<K, V>) {
-        match context.op {
-            Operation::Add => self.handle_add(&mut base_node, context),
-            Operation::Get => {}
-            Operation::Remove => {}
-        }
-    }
-
-    fn handle_add(&mut self, base_node: &mut BaseNode<K, V>, context: Context<K, V>) {
+    fn handle_add(
+        &mut self,
+        key: K,
+        value: V,
+        mut base_node: BaseNode<K, V>,
+        index_on_path: Vec<IndexNode<K, V>>,
+    ) {
         let node_key = base_node.get_key();
-        assert!(context.key >= node_key);
+        assert!(key >= node_key);
         // add new node
-        if context.key > node_key {
+        if key > node_key {
             let right = base_node.get_right_node();
-            let new_node = BaseNode::new(context.key, context.value.unwrap(), right);
+            let new_node = BaseNode::new(key, value, right);
             base_node.set_right_node(Some(new_node.clone()));
-            // n.right = Some(new_node.clone());
 
             // build index node
-
-            self.fix_index_nodes(context.key, context.index_nodes_on_path, new_node);
+            self.fix_index_nodes(key, index_on_path, new_node);
             self.inc_len();
             //     override exit node value
         } else {
-            base_node.set_value(context.value.unwrap());
+            base_node.set_value(value);
         }
     }
 
@@ -326,6 +360,7 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
 mod test {
     use super::SkipList;
     use std::borrow::Borrow;
+    use std::cell::RefCell;
 
     #[test]
     fn test_new_list() {
@@ -395,17 +430,26 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn test_get() {
         let mut list: SkipList<i32, i32> = SkipList::with_max_level();
         assert!(list.get(2).is_none());
         list.add(1, 0);
-        assert_eq!(list.get(1).unwrap(), &0);
+        assert_eq!(
+            *(list.get(1).unwrap().borrow() as &RefCell<i32>).borrow(),
+            0
+        );
         assert!(list.get(2).is_none());
         list.add(2, 3);
-        assert_eq!(list.get(2).unwrap(), &3);
+        assert_eq!(
+            *(list.get(2).unwrap().borrow() as &RefCell<i32>).borrow(),
+            3
+        );
+        list.print();
         list.add(1, 1);
-        assert_eq!(list.get(1).unwrap(), &1);
+        assert_eq!(
+            *(list.get(1).unwrap().borrow() as &RefCell<i32>).borrow(),
+            1
+        );
     }
 
     #[test]
@@ -415,7 +459,7 @@ mod test {
         let s = list.to_string();
         assert_eq!(
             s,
-            r#"{"base":[[0,3],[1,3],[2,3],[5,3],[8,3]],"index":{"0":[0,2,8,5],"1":[0,2,8],"2":[0,8],"3":[0]}}"#
+            r#"{"base":[[0,3],[1,3],[2,3],[5,3],[8,3]],"index":{"0":[0,2,5,8],"1":[0,2,8],"2":[0,8],"3":[0]}}"#
         );
         assert_eq!(list.len(), 5);
         assert_eq!(list.level(), 5 - 1);

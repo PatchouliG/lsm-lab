@@ -10,7 +10,7 @@ pub struct BaseNode<K: Copy + PartialOrd, V> {
 // lowest node  level=0
 pub struct BaseNodeInner<K: Copy + PartialOrd, V> {
     pub key: K,
-    pub value: V,
+    pub value: Rc<RefCell<V>>,
     right: Option<BaseNode<K, V>>,
 }
 
@@ -33,8 +33,14 @@ impl<K: Copy + PartialOrd, V> BaseNode<K, V> {
         self.get_ref().key
     }
     pub fn set_value(&mut self, value: V) {
-        let mut v = self.get_mut_ref();
-        v.value = value;
+        let v = self.get_mut_ref();
+        v.value.replace(value);
+    }
+
+    pub fn get_value(&self) -> Rc<RefCell<V>> {
+        let v = self.get_mut_ref();
+        let tmp = v.value.clone();
+        tmp
     }
     pub fn get_node(&self) -> Rc<RefCell<BaseNodeInner<K, V>>> {
         self.node.clone()
@@ -48,7 +54,7 @@ impl<K: Copy + PartialOrd, V> BaseNode<K, V> {
         let mut n = self.get_mut_ref();
         n.right = right;
     }
-    pub fn get_ref(&self) -> Ref<BaseNodeInner<K, V>> {
+    fn get_ref(&self) -> Ref<BaseNodeInner<K, V>> {
         let n = self.node.borrow();
         n
     }
@@ -60,7 +66,11 @@ impl<K: Copy + PartialOrd, V> BaseNode<K, V> {
 
 impl<K: Copy + PartialOrd, V> BaseNodeInner<K, V> {
     fn new(key: K, value: V, right: Option<BaseNode<K, V>>) -> BaseNodeInner<K, V> {
-        BaseNodeInner { key, value, right }
+        BaseNodeInner {
+            key,
+            value: Rc::new(RefCell::new(value)),
+            right,
+        }
     }
 }
 
