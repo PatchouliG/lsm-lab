@@ -92,7 +92,7 @@ impl<K: Copy + PartialOrd + Display + Serialize, V: Display + Copy + Serialize> 
         let iterator = self.to_iter();
         for node_iter in iterator {
             let key = node_iter.get_key();
-            let value = *(node_iter.get_value().borrow() as &RefCell<V>).borrow();
+            let value = node_iter.map_value(|v| v.clone());
             graph.add_base_key(key, value);
         }
         for (level_number, level_head) in self.indexes.iter() {
@@ -162,7 +162,7 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         self.handle_add(key, value, base_node, indexs);
         return;
     }
-    pub fn get(&self, key: K) -> GetResult<V> {
+    pub fn map_value<T>(&self, key: K, f: fn(&V) -> T) -> Option<T> {
         // handle empty
         if self.len() == 0 {
             return None;
@@ -183,7 +183,7 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
             };
 
         if node_founded.get_key() == key {
-            return Some(node_founded.get_value());
+            return Some(node_founded.map_value(f));
         } else {
             return None;
         }
@@ -349,6 +349,13 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         }
     }
 }
+
+impl<K: Copy + PartialOrd, V: Copy> SkipList<K, V> {
+    pub fn get_value(&self, key: K) -> Option<V> {
+        self.map_value(key, |res| res.clone())
+    }
+}
+
 // 1.  find nearest base node
 // a. handle emtpy list
 // b. find nearest index node in this level
@@ -432,24 +439,14 @@ mod test {
     #[test]
     fn test_get() {
         let mut list: SkipList<i32, i32> = SkipList::with_max_level();
-        assert!(list.get(2).is_none());
+        assert!(list.get_value(2).is_none());
         list.add(1, 0);
-        assert_eq!(
-            *(list.get(1).unwrap().borrow() as &RefCell<i32>).borrow(),
-            0
-        );
-        assert!(list.get(2).is_none());
+        assert_eq!(list.get_value(1).unwrap(), 0);
+        assert!(list.get_value(2).is_none());
         list.add(2, 3);
-        assert_eq!(
-            *(list.get(2).unwrap().borrow() as &RefCell<i32>).borrow(),
-            3
-        );
-        list.print();
+        assert_eq!(list.get_value(2).unwrap(), 3);
         list.add(1, 1);
-        assert_eq!(
-            *(list.get(1).unwrap().borrow() as &RefCell<i32>).borrow(),
-            1
-        );
+        assert_eq!(list.get_value(1).unwrap(), 1);
     }
 
     #[test]
