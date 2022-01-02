@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
+use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
-use std::cell::{RefCell, Ref, RefMut};
 
 pub struct BaseNode<K: Copy + PartialOrd, V> {
     node: Rc<RefCell<BaseNodeInner<K, V>>>,
@@ -16,25 +16,26 @@ pub struct BaseNodeInner<K: Copy + PartialOrd, V> {
 
 impl<K: Copy + PartialOrd, V> Clone for BaseNode<K, V> {
     fn clone(&self) -> Self {
-        BaseNode { node: self.node.clone() }
+        BaseNode {
+            node: self.node.clone(),
+        }
     }
 }
 
 impl<K: Copy + PartialOrd, V> BaseNode<K, V> {
     pub fn new(key: K, value: V, right: Option<BaseNode<K, V>>) -> BaseNode<K, V> {
-        BaseNode { node: Rc::new(RefCell::new(BaseNodeInner::new(key, value, right))) }
+        BaseNode {
+            node: Rc::new(RefCell::new(BaseNodeInner::new(key, value, right))),
+        }
     }
 
     pub fn get_key(&self) -> K {
         self.get_ref().key
     }
     pub fn set_value(&mut self, value: V) {
-        let mut v=self.get_mut_ref();
+        let mut v = self.get_mut_ref();
         v.value = value;
     }
-    // pub fn get_value(&self) -> &V {
-    //     &self.get_ref().value
-    // }
     pub fn get_node(&self) -> Rc<RefCell<BaseNodeInner<K, V>>> {
         self.node.clone()
     }
@@ -47,7 +48,7 @@ impl<K: Copy + PartialOrd, V> BaseNode<K, V> {
         let mut n = self.get_mut_ref();
         n.right = right;
     }
-    fn get_ref(&self) -> Ref<BaseNodeInner<K, V>> {
+    pub fn get_ref(&self) -> Ref<BaseNodeInner<K, V>> {
         let n = self.node.borrow();
         n
     }
@@ -56,7 +57,6 @@ impl<K: Copy + PartialOrd, V> BaseNode<K, V> {
         n
     }
 }
-
 
 impl<K: Copy + PartialOrd, V> BaseNodeInner<K, V> {
     fn new(key: K, value: V, right: Option<BaseNode<K, V>>) -> BaseNodeInner<K, V> {
@@ -72,12 +72,8 @@ pub enum IndexNodeChild<K: Copy + PartialOrd, V> {
 impl<K: Copy + PartialOrd, V> Clone for IndexNodeChild<K, V> {
     fn clone(&self) -> Self {
         match self {
-            IndexNodeChild::Base(b) => {
-                IndexNodeChild::Base(b.clone())
-            }
-            IndexNodeChild::Index(i) => {
-                IndexNodeChild::Index(i.clone())
-            }
+            IndexNodeChild::Base(b) => IndexNodeChild::Base(b.clone()),
+            IndexNodeChild::Index(i) => IndexNodeChild::Index(i.clone()),
         }
     }
 }
@@ -96,7 +92,6 @@ pub struct IndexNodeIterator<K: Copy + PartialOrd, V> {
     node: Option<IndexNode<K, V>>,
 }
 
-
 impl<K: Copy + PartialOrd, V> Iterator for IndexNodeIterator<K, V> {
     type Item = IndexNode<K, V>;
 
@@ -109,17 +104,23 @@ impl<K: Copy + PartialOrd, V> Iterator for IndexNodeIterator<K, V> {
 
 impl<K: Copy + PartialOrd, V> Clone for IndexNode<K, V> {
     fn clone(&self) -> Self {
-        IndexNode { node: self.node.clone() }
+        IndexNode {
+            node: self.node.clone(),
+        }
     }
 }
 
 impl<K: Copy + PartialOrd, V> IndexNode<K, V> {
-    pub fn new(key: K, right: Option<IndexNode<K, V>>, child: IndexNodeChild<K, V>) -> Self <> {
-        IndexNode { node: Rc::new(RefCell::new(IndexNodeInner { key, right, child })) }
+    pub fn new(key: K, right: Option<IndexNode<K, V>>, child: IndexNodeChild<K, V>) -> Self {
+        IndexNode {
+            node: Rc::new(RefCell::new(IndexNodeInner { key, right, child })),
+        }
     }
 
     pub fn to_iter(&self) -> IndexNodeIterator<K, V> {
-        IndexNodeIterator { node: Some(self.clone()) }
+        IndexNodeIterator {
+            node: Some(self.clone()),
+        }
     }
 
     pub fn get_key(&self) -> K {
@@ -143,7 +144,6 @@ impl<K: Copy + PartialOrd, V> IndexNode<K, V> {
     }
 }
 
-
 pub struct SkipListIter<K: Copy + PartialOrd, V> {
     node: Option<BaseNode<K, V>>,
 }
@@ -164,9 +164,7 @@ impl<K: Copy + PartialOrd, V> Iterator for SkipListIter<K, V> {
                 self.node = n.get_right_node();
                 Some(n)
             }
-            None => {
-                None
-            }
+            None => None,
         }
     }
 }

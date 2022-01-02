@@ -27,8 +27,9 @@ struct SkipList<K: Copy + PartialOrd, V> {
 struct Context<K: Copy + PartialOrd, V> {
     op: Operation,
     key: K,
-    value: V,
-    index_nodes: Vec<IndexNode<K, V>>,
+    // some if add op
+    value: Option<V>,
+    index_nodes_on_path: Vec<IndexNode<K, V>>,
 }
 
 fn max_level(len: usize) -> usize {
@@ -46,12 +47,12 @@ impl<K: Copy + PartialOrd, V> Context<K, V> {
         Context {
             op: Operation::Add,
             key,
-            value,
-            index_nodes: vec![],
+            value: Some(value),
+            index_nodes_on_path: vec![],
         }
     }
     fn visit(&mut self, node: IndexNode<K, V>) {
-        self.index_nodes.push(node);
+        self.index_nodes_on_path.push(node);
     }
 }
 
@@ -85,18 +86,11 @@ impl<K: Display + Copy, V: Display + Copy> Graph<K, V> {
 
 impl<K: Copy + PartialOrd + Display + Serialize, V: Display + Copy + Serialize> SkipList<K, V> {
     pub fn to_graph(&self) -> Graph<K, V> {
-        // let mut s = String::new();
         let mut graph = Graph::new();
         let iterator = self.to_iter();
-        for i in iterator {
-            let key = i.get_key();
-
-            graph.add_base_key(
-                key,
-                (i.get_node().borrow() as &RefCell<BaseNodeInner<K, V>>)
-                    .borrow()
-                    .value,
-            );
+        for node_iter in iterator {
+            let key = node_iter.get_key();
+            graph.add_base_key(key, node_iter.get_ref().value);
         }
         for (level_number, level_head) in self.indexes.iter() {
             let mut vec = vec![];
@@ -156,13 +150,11 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
 
         let context = Context::with_add_op(key, value);
         // head index is more than key, visit base
-        if !self.has_index_level() || self.get_head_index().unwrap().get_key().gt(&key) {
+        if !self.has_index_level() || self.get_head_index().unwrap().get_key() > key {
             self.visit_base(key, head, context);
-            // if context.old_value.is_none() { self.len += 1; }
             return;
         }
         self.visit_level(key, self.get_head_index().unwrap(), context);
-        // if context.old_value.is_none() { self.len += 1; }
         return;
     }
     pub fn get(&self, key: K) -> Option<&V> {
@@ -222,28 +214,29 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
 
     fn handle_operation(&mut self, mut base_node: BaseNode<K, V>, context: Context<K, V>) {
         match context.op {
-            Operation::Add => {
-                // let mut n = (base_node.borrow() as &RefCell<BaseNode<K, V>>).borrow_mut();
-                let node_key = base_node.get_key();
-                assert!(context.key >= node_key);
-                // add
-                if context.key > node_key {
-                    let right = base_node.get_right_node();
-                    let new_node = BaseNode::new(context.key, context.value, right);
-                    base_node.set_right_node(Some(new_node.clone()));
-                    // n.right = Some(new_node.clone());
-
-                    // build index node
-
-                    self.fix_index_nodes(context.key, context.index_nodes, new_node);
-                    self.inc_len();
-                    //     override exit node value
-                } else {
-                    base_node.set_value(context.value);
-                }
-            }
+            Operation::Add => self.handle_add(&mut base_node, context),
             Operation::Set => {}
             Operation::Remove => {}
+        }
+    }
+
+    fn handle_add(&mut self, base_node: &mut BaseNode<K, V>, context: Context<K, V>) {
+        let node_key = base_node.get_key();
+        assert!(context.key >= node_key);
+        // add new node
+        if context.key > node_key {
+            let right = base_node.get_right_node();
+            let new_node = BaseNode::new(context.key, context.value.unwrap(), right);
+            base_node.set_right_node(Some(new_node.clone()));
+            // n.right = Some(new_node.clone());
+
+            // build index node
+
+            self.fix_index_nodes(context.key, context.index_nodes_on_path, new_node);
+            self.inc_len();
+            //     override exit node value
+        } else {
+            base_node.set_value(context.value.unwrap());
         }
     }
 
