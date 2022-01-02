@@ -143,6 +143,7 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         }
         // insert to head if key is less then head key
         let head = self.get_head_base();
+
         if head.get_key().gt(&key) {
             let base_node = BaseNode::new(key, value, Some(head));
             self.base_head = Some(base_node.clone());
@@ -154,10 +155,12 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         // head index is more than key, visit base
         let (base_node, indexs) =
             if !self.has_index_level() || self.get_head_index().unwrap().get_key() > key {
-                let base_node = self.search_in_base(key, self.get_head_base());
+                let base_node = self.search_last_le_in_base(key, self.get_head_base());
                 (base_node, vec![])
             } else {
-                self.search_by_index(key, Operation::Add)
+                let (mut base_node, indexs) = self.search_last_le_in_index(key, Operation::Add);
+                base_node = self.search_last_le_in_base(key, base_node);
+                (base_node, indexs)
             };
         self.handle_add(key, value, base_node, indexs);
         return;
@@ -176,10 +179,10 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         let node_founded =
             if !self.has_index_level() || self.get_head_index().unwrap().get_key() > key {
                 let head = self.get_head_base();
-                self.search_in_base(key, head)
+                self.search_last_le_in_base(key, head)
             } else {
-                let (base, _) = self.search_by_index(key, Operation::Get);
-                self.search_in_base(key, base)
+                let (base, _) = self.search_last_le_in_index(key, Operation::Get);
+                self.search_last_le_in_base(key, base)
             };
 
         if node_founded.get_key() == key {
@@ -205,20 +208,40 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         self.len += 1;
     }
 
-    fn search_in_base(&self, key: K, start_node: BaseNode<K, V>) -> BaseNode<K, V> {
+    fn search_last_le_in_base(&self, key: K, start_node: BaseNode<K, V>) -> BaseNode<K, V> {
+        self.search_in_base(key, start_node, |a, b| a <= b)
+    }
+    fn search_in_base(
+        &self,
+        key: K,
+        start_node: BaseNode<K, V>,
+        is_match: fn(K, K) -> bool,
+    ) -> BaseNode<K, V> {
         assert!(self.len() >= 1);
         assert!(key >= self.get_head_base().get_key());
         let mut base_node_iter = SkipListIter::new(Some(start_node));
         let node = base_node_iter
             .find(|n| {
-                n.get_key() <= key
+                is_match(n.get_key(), key)
                     && (n.get_right_node().is_none() || n.get_right_node().unwrap().get_key() > key)
             })
             .unwrap();
         node
     }
 
-    fn search_by_index(&self, key: K, op: Operation) -> (BaseNode<K, V>, Vec<IndexNode<K, V>>) {
+    fn search_last_le_in_index(
+        &self,
+        key: K,
+        op: Operation,
+    ) -> (BaseNode<K, V>, Vec<IndexNode<K, V>>) {
+        self.search_in_index(key, op, |a, b| a <= b)
+    }
+    fn search_in_index(
+        &self,
+        key: K,
+        op: Operation,
+        is_match: fn(K, K) -> bool,
+    ) -> (BaseNode<K, V>, Vec<IndexNode<K, V>>) {
         let mut current_index_node = self.get_head_index().unwrap();
         let mut res = vec![];
         assert!(current_index_node.get_key() <= (key));
@@ -227,7 +250,7 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
             let first_node = current_index_node
                 .to_iter()
                 .find(|n| {
-                    n.get_key() <= key
+                    is_match(n.get_key(), key)
                         && (n.get_right_node().is_none()
                             || n.get_right_node().unwrap().get_key() > key)
                 })
@@ -438,7 +461,7 @@ mod test {
 
     #[test]
     fn test_get() {
-        let mut list: SkipList<i32, i32> = SkipList::with_max_level();
+        let mut list: SkipList<i32, i32> = SkipList::new();
         assert!(list.get_value(2).is_none());
         list.add(1, 0);
         assert_eq!(list.get_value(1).unwrap(), 0);
@@ -447,6 +470,10 @@ mod test {
         assert_eq!(list.get_value(2).unwrap(), 3);
         list.add(1, 1);
         assert_eq!(list.get_value(1).unwrap(), 1);
+        list.add(4, 1);
+        list.add(8, 1);
+        list.add(11, 1);
+        list.print();
     }
 
     #[test]
