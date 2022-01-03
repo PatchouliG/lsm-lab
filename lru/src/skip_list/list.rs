@@ -12,6 +12,7 @@ use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
 use crate::rand::simple_rand::*;
+use log::trace;
 use std::collections::{BTreeMap, HashMap};
 use std::iter::Map;
 
@@ -246,8 +247,8 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
                 (base_node, vec![])
             } else {
                 let (mut base_node, indexs) = self.search_last_le_in_index(key, Operation::Add);
-                base_node = self.search_last_le_in_base(key, base_node);
-                (base_node, indexs)
+                let node = self.search_last_le_in_base(key, base_node.unwrap());
+                (node, indexs)
             };
         self.handle_add(key, value, base_node, indexs);
         return;
@@ -269,7 +270,7 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
                 self.search_last_le_in_base(key, head)
             } else {
                 let (base, _) = self.search_last_le_in_index(key, Operation::Get);
-                self.search_last_le_in_base(key, base)
+                self.search_last_le_in_base(key, base.unwrap())
             };
 
         if node_founded.get_key() == key {
@@ -280,9 +281,53 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
     }
     pub fn remove(&mut self, key: K) {
         // handle empty
+        if self.is_empty() {
+            return;
+        }
+
+        // check head
+        if self.get_head_base().get_key() == key {
+            self.base_head = self.base_head.as_ref().unwrap().get_right_node();
+            return;
+        }
+
         // handle one levels,len -=1
+        if !self.has_index_level() {
+            let node_before = self.search_in_base(key, self.get_head_base(), |node, key| {
+                if let Some(right) = node.get_right_node() {
+                    if right.get_key() == key {
+                        return true;
+                    }
+                }
+                return false;
+            });
+            match node_before {
+                Some(mut n) => {
+                    n.set_right_node(n.get_right_node().unwrap().get_right_node());
+                }
+                None => {}
+            }
+        } else {
+            // let (node_before, indexs) =
+            //     self.search_in_index(key, Operation::Remove, |node, key| {
+            //         if let Some(right) = node.get_right_node() {
+            //             if right.get_key() > key {
+            //                 return true;
+            //             }
+            //         }
+            //         return false;
+            //     });
+            // match node_before {
+            //     Some(mut n) => {
+            //         self.search_in_base(key,on)
+            //         n.set_right_node(n.get_right_node().unwrap().get_right_node());
+            //     }
+            //     None => {}
+            // }
+        }
+        // todo continue handle list has level index
         // visit by visit handle
-        unimplemented!()
+        // unimplemented!()
     }
 
     pub fn len(&self) -> usize {
@@ -296,23 +341,22 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
     }
 
     fn search_last_le_in_base(&self, key: K, start_node: BaseNode<K, V>) -> BaseNode<K, V> {
-        self.search_in_base(key, start_node, |a, b| a <= b)
+        self.search_in_base(key, start_node, |node, b| {
+            node.get_key() <= b
+                && (node.get_right_node().is_none() || node.get_right_node().unwrap().get_key() > b)
+        })
+        .unwrap()
     }
     fn search_in_base(
         &self,
         key: K,
         start_node: BaseNode<K, V>,
-        is_match: fn(K, K) -> bool,
-    ) -> BaseNode<K, V> {
+        is_match: fn(&BaseNode<K, V>, K) -> bool,
+    ) -> Option<BaseNode<K, V>> {
         assert!(self.len() >= 1);
         assert!(key >= self.get_head_base().get_key());
         let mut base_node_iter = SkipListIter::new(Some(start_node));
-        let node = base_node_iter
-            .find(|n| {
-                is_match(n.get_key(), key)
-                    && (n.get_right_node().is_none() || n.get_right_node().unwrap().get_key() > key)
-            })
-            .unwrap();
+        let node = base_node_iter.find(|n| is_match(n, key));
         node
     }
 
@@ -320,41 +364,44 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         &self,
         key: K,
         op: Operation,
-    ) -> (BaseNode<K, V>, Vec<IndexNode<K, V>>) {
-        self.search_in_index(key, op, |a, b| a <= b)
+    ) -> (Option<BaseNode<K, V>>, Vec<IndexNode<K, V>>) {
+        self.search_in_index(key, op, |a, key| {
+            a.get_key() <= key
+                && (a.get_right_node().is_none() || a.get_right_node().unwrap().get_key() > key)
+        })
     }
     fn search_in_index(
         &self,
         key: K,
         op: Operation,
-        is_match: fn(K, K) -> bool,
-    ) -> (BaseNode<K, V>, Vec<IndexNode<K, V>>) {
+        is_match: fn(node: &IndexNode<K, V>, K) -> bool,
+    ) -> (Option<BaseNode<K, V>>, Vec<IndexNode<K, V>>) {
         let mut current_index_node = self.get_head_index().unwrap();
         let mut res = vec![];
         assert!(current_index_node.get_key() <= (key));
         loop {
             // 1. find the fist node which key is less the search key
-            let first_node = current_index_node
-                .to_iter()
-                .find(|n| {
-                    is_match(n.get_key(), key)
-                        && (n.get_right_node().is_none()
-                            || n.get_right_node().unwrap().get_key() > key)
-                })
-                .unwrap();
+            let first_node = current_index_node.to_iter().find(|n| is_match(n, key));
             // record if is set/remove op
-            if op == Operation::Add || op == Operation::Remove {
-                res.push(first_node.clone());
-            }
-            let child_node = first_node.get_child();
-            match child_node {
-                //  continue loop
-                IndexNodeChild::Index(n) => {
-                    current_index_node = n;
+            match first_node {
+                Some(n) => {
+                    if op == Operation::Add || op == Operation::Remove {
+                        res.push(n.clone());
+                    }
+                    let child_node = n.get_child();
+                    match child_node {
+                        //  continue loop
+                        IndexNodeChild::Index(n) => {
+                            current_index_node = n;
+                        }
+                        // return if is base
+                        IndexNodeChild::Base(n) => {
+                            return (Some(n), res);
+                        }
+                    }
                 }
-                // return if is base
-                IndexNodeChild::Base(n) => {
-                    return (n, res);
+                None => {
+                    return (None, res);
                 }
             }
         }
@@ -479,6 +526,7 @@ mod test {
     use crate::skip_list::list::Graph;
     use std::borrow::Borrow;
     use std::cell::RefCell;
+    use std::cmp::Ordering::Greater;
 
     #[test]
     fn test_new_list() {
@@ -542,9 +590,65 @@ mod test {
         list.print();
     }
 
+    #[test]
+    fn remove_first_list_only_one_level() {
+        let s = r#"{"base":[[0,3],[1,3],[2,3],[5,3],[8,3]],"index":{}}"#;
+        let g = serde_json::from_str(s).unwrap();
+        let mut list: SkipList<i32, i32> = SkipList::from_graph(g);
+        list.remove(0);
+        assert_eq!(
+            list.to_string(),
+            r#"{"base":[[1,3],[2,3],[5,3],[8,3]],"index":{}}"#
+        );
+    }
+    #[test]
+    fn test_remove_list_with_level() {
+        let s = r#"{"base":[[0,3],[1,3],[2,3],[5,3],[8,3]],"index":{"0":[0,2,5,8],"1":[0,2,8],"2":[0,8],"3":[0]}}"#;
+        let g = serde_json::from_str(s).unwrap();
+        let mut list: SkipList<i32, i32> = SkipList::from_graph(g);
+        list.remove(0);
+        assert_eq!(
+            list.to_string(),
+            r#"{"base":[[1,3],[2,3],[5,3],[8,3]],"index":{"0":[2,5,8],"1":[2,8],"2":[8]}}"#
+        );
+    }
+
+    #[test]
+    fn test_remove_second_list_only_one_level() {
+        let s = r#"{"base":[[0,3],[1,3],[2,3],[5,3],[8,3]],"index":{}}"#;
+        let g = serde_json::from_str(s).unwrap();
+        let mut list: SkipList<i32, i32> = SkipList::from_graph(g);
+        list.remove(1);
+        assert_eq!(
+            list.to_string(),
+            r#"{"base":[[0,3],[2,3],[5,3],[8,3]],"index":{}}"#
+        );
+    }
+
+    #[test]
+    fn test_remove_empty_list() {
+        let mut list: SkipList<i32, i32> = SkipList::new();
+        list.remove(1);
+    }
+    #[test]
+    #[ignore]
     fn test_remove_list() {
-        //     remove from list
-        //     check field
+        let mut list = SkipList::new();
+        // empty remove
+        list.remove(1);
+        list.add(1, 1);
+        list.add(2, 2);
+        list.add(0, 0);
+        list.add(3, 3);
+        // remove not exits
+        list.remove(10);
+        list.remove(1);
+        list.remove(3);
+        list.remove(2);
+        list.add(1, 1);
+        list.add(5, 5);
+        assert_eq!(list.len(), 3);
+        assert_eq!(list.to_string(), "");
     }
 
     #[test]

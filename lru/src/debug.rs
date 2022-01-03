@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![allow(unused_imports)]
+#![allow(unused_must_use)]
 
 mod debug {
     use std::fmt::Display;
@@ -25,6 +26,7 @@ mod debug {
     mod test {
         use serde::{Deserialize, Serialize};
         use serde_json::Result;
+        use std::fmt::Write;
         use std::ops::Add;
 
         #[derive(Serialize, Deserialize)]
@@ -45,15 +47,28 @@ mod debug {
 
             // Print, write to a file, or send to an HTTP server.
             println!("{}", j);
-            let a :Address=serde_json::from_str(&j)?;
+            let a: Address = serde_json::from_str(&j)?;
             println!("{}", a.street);
-
             Ok(())
         }
 
-        #[test]
-        fn test() -> Result<()> {
-            print_an_address()
+        use log::{info, warn};
+        use log::{LevelFilter, SetLoggerError};
+
+        use simplelog::*;
+        use std::fs::File;
+
+        pub fn init() {
+            WriteLogger::init(
+                LevelFilter::Debug,
+                Config::default(),
+                File::create("test234").unwrap(),
+            );
+
+            // let res = log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Info));
+            // res
         }
+        #[test]
+        fn test() {}
     }
 }
