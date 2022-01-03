@@ -99,7 +99,7 @@ pub struct IndexNode<K: Copy + PartialOrd, V> {
 }
 
 pub struct IndexNodeIterator<K: Copy + PartialOrd, V> {
-    node: Option<IndexNode<K, V>>,
+    pub node: Option<IndexNode<K, V>>,
 }
 
 impl<K: Copy + PartialOrd, V> Iterator for IndexNodeIterator<K, V> {

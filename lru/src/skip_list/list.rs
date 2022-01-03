@@ -87,6 +87,93 @@ impl<K: Display + Copy, V: Display + Copy> Graph<K, V> {
 }
 
 impl<K: Copy + PartialOrd + Display + Serialize, V: Display + Copy + Serialize> SkipList<K, V> {
+    pub fn from_graph(g: Graph<K, V>) -> Self {
+        let mut base_node;
+        // base head node
+        let mut last_node: Option<BaseNode<K, V>> = None;
+        let mut base_first_node = None;
+        let mut len = 0;
+        // build base
+        for (k, v) in g.base {
+            base_node = BaseNode::new(k, v, None);
+            if let Some(mut n) = last_node {
+                n.set_right_node(Some(base_node.clone()));
+            } else {
+                base_first_node = Some(base_node.clone());
+            }
+            last_node = Some(base_node.clone());
+            len += 1;
+        }
+        if g.index.get(&0).is_none() {
+            return SkipList {
+                indexes: BTreeMap::new(),
+                base_head: base_first_node,
+                len,
+                r: RefCell::new(SimpleRand::new()),
+                always_max: false,
+            };
+        }
+        // build first level
+        let mut level_index = BTreeMap::new();
+
+        let mut current_node;
+        let mut last_node: Option<IndexNode<K, V>> = None;
+        let mut first_node: Option<IndexNode<K, V>> = None;
+        for b in g.index.get(&0) {
+            for key in b {
+                let mut base_iter = SkipListIter::new(Some(base_first_node.clone().unwrap()));
+                let child = base_iter.find(|n| n.get_key() == *key);
+                current_node = IndexNode::new(*key, None, IndexNodeChild::Base(child.unwrap()));
+                if let Some(mut n) = last_node {
+                    n.set_right(Some(current_node.clone()));
+                } else {
+                    first_node = Some(current_node.clone());
+                }
+                last_node = Some(current_node);
+            }
+        }
+        level_index.insert(0, first_node.unwrap());
+        if g.index.get(&1).is_none() {
+            return SkipList {
+                indexes: level_index,
+                base_head: base_first_node,
+                len,
+                r: RefCell::new(SimpleRand::new()),
+                always_max: false,
+            };
+        }
+        // build 2-last level
+        for i in 1..g.index.len() {
+            let mut current_node;
+            let mut last_node: Option<IndexNode<K, V>> = None;
+            let mut first_node = None;
+            for b in g.index.get(&i) {
+                for key in b {
+                    let head_node_in_prev_level = level_index.get(&(i - 1)).unwrap();
+                    let mut node_iter = IndexNodeIterator {
+                        node: Some(head_node_in_prev_level.clone()),
+                    };
+                    let child = node_iter.find(|n| n.get_key() == *key);
+                    current_node =
+                        IndexNode::new(*key, None, IndexNodeChild::Index(child.unwrap()));
+                    if let Some(mut n) = last_node {
+                        n.set_right(Some(current_node.clone()));
+                    } else {
+                        first_node = Some(current_node.clone());
+                    }
+                    last_node = Some(current_node);
+                }
+            }
+            level_index.insert(i, first_node.unwrap());
+        }
+        return SkipList {
+            indexes: level_index,
+            base_head: base_first_node,
+            len,
+            r: RefCell::new(SimpleRand::new()),
+            always_max: false,
+        };
+    }
     pub fn to_graph(&self) -> Graph<K, V> {
         let mut graph = Graph::new();
         let iterator = self.to_iter();
@@ -389,6 +476,7 @@ impl<K: Copy + PartialOrd, V: Copy> SkipList<K, V> {
 // remember test head ,tail node and empty list
 mod test {
     use super::SkipList;
+    use crate::skip_list::list::Graph;
     use std::borrow::Borrow;
     use std::cell::RefCell;
 
@@ -497,5 +585,16 @@ mod test {
         list.add(8, 3);
         list.add(0, 3);
         list
+    }
+    #[test]
+    fn test_build_list_from_graph() {
+        let s = r#"{"base":[[0,3],[1,3],[2,3],[5,3],[8,3]],"index":{"0":[0,2,5,8]}}"#;
+        let graph: Graph<i32, i32> = serde_json::from_str(s).unwrap();
+        let list = SkipList::from_graph(graph);
+        assert_eq!(list.to_string(), s);
+        let s = r#"{"base":[[0,3],[1,3],[2,3],[5,3],[8,3]],"index":{"0":[0,2,5,8],"1":[0,2,8],"2":[0,8],"3":[0]}}"#;
+        let graph: Graph<i32, i32> = serde_json::from_str(s).unwrap();
+        let list = SkipList::from_graph(graph);
+        assert_eq!(list.to_string(), s);
     }
 }
