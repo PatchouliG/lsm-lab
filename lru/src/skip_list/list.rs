@@ -2,12 +2,11 @@
 #![allow(unused_variables)]
 #![allow(unused_imports)]
 
-use super::node::{BaseNode, IndexNode, IndexNodeChild, SkipListIter};
-use std::alloc::handle_alloc_error;
+use super::context::{Context, DebugContext};
+use super::node::{BaseNode, BaseNodeIterator, IndexNode, IndexNodeChild};
 use std::borrow::{Borrow, BorrowMut};
 use std::cell::{Ref, RefCell};
 use std::fmt::Display;
-use std::fs::read_to_string;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
@@ -18,7 +17,7 @@ use std::iter::Map;
 
 type GetResult<V> = Option<Rc<RefCell<V>>>;
 
-struct SkipList<K: Copy + PartialOrd, V> {
+pub struct SkipList<K: Copy + PartialOrd, V> {
     indexes: BTreeMap<usize, IndexNode<K, V>>,
     base_head: Option<BaseNode<K, V>>,
     len: usize,
@@ -27,7 +26,7 @@ struct SkipList<K: Copy + PartialOrd, V> {
     always_max: bool,
 }
 
-struct Context<K: Copy + PartialOrd, V> {
+struct ContextImp<K: Copy + PartialOrd, V> {
     op: Operation,
     key: K,
     // some if add op
@@ -45,18 +44,26 @@ fn max_level(len: usize) -> usize {
     }
 }
 
-impl<K: Copy + PartialOrd, V> Context<K, V> {
-    fn with_add_op(key: K, value: V) -> Context<K, V> {
-        Context {
+impl<K: Copy + PartialOrd, V> ContextImp<K, V> {
+    fn is_index_match(&self, node: &IndexNode<K, V>) -> bool {
+        unimplemented!()
+    }
+
+    fn is_base_node_match(&self, node: &BaseNode<K, V>) -> bool {
+        unimplemented!()
+    }
+    fn with_add_op(key: K, value: V) -> ContextImp<K, V> {
+        ContextImp {
             op: Operation::Add,
             key,
             value: Some(value),
             index_nodes_on_path: vec![],
         }
     }
-    fn visit(&mut self, node: IndexNode<K, V>) {
-        self.index_nodes_on_path.push(node);
+    fn visit_index(&mut self, node: IndexNode<K, V>) {
+        unimplemented!()
     }
+    fn visit_base(&mut self, node: BaseNode<K, V>) {}
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -70,7 +77,7 @@ use crate::skip_list::node::{BaseNodeInner, IndexNodeIterator};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
-struct Graph<K, V> {
+pub struct Graph<K, V> {
     base: Vec<(K, V)>,
     index: BTreeMap<usize, Vec<K>>,
 }
@@ -88,6 +95,11 @@ impl<K: Display + Copy, V: Display + Copy> Graph<K, V> {
 }
 
 impl<K: Copy + PartialOrd + Display + Serialize, V: Display + Copy + Serialize> SkipList<K, V> {
+    pub fn debug_visitor(&self, key: K) -> DebugContext<K> {
+        let mut context = DebugContext::new(key);
+        self.search_node(&mut context);
+        context
+    }
     pub fn from_graph(g: Graph<K, V>) -> Self {
         let mut base_node;
         // base head node
@@ -122,7 +134,7 @@ impl<K: Copy + PartialOrd + Display + Serialize, V: Display + Copy + Serialize> 
         let mut first_node: Option<IndexNode<K, V>> = None;
         for b in g.index.get(&0) {
             for key in b {
-                let mut base_iter = SkipListIter::new(Some(base_first_node.clone().unwrap()));
+                let mut base_iter = BaseNodeIterator::new(base_first_node.clone());
                 let child = base_iter.find(|n| n.get_key() == *key);
                 current_node = IndexNode::new(*key, None, IndexNodeChild::Base(child.unwrap()));
                 if let Some(mut n) = last_node {
@@ -216,11 +228,17 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         res.always_max = true;
         res
     }
-    pub fn to_iter(&self) -> SkipListIter<K, V> {
-        SkipListIter::new(self.base_head.clone())
+    pub fn to_iter(&self) -> BaseNodeIterator<K, V> {
+        BaseNodeIterator::new(self.base_head.clone())
     }
     pub fn level(&self) -> usize {
         self.indexes.len()
+    }
+    pub fn add_refactor(&mut self, key: K, value: V) {
+        // let context
+        // self.search_node(context)
+        // context.get_node_op
+        //     if get .fix node on path
     }
     pub fn add(&mut self, key: K, value: V) {
         if self.is_empty() {
@@ -246,7 +264,7 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
                 let base_node = self.search_last_le_in_base(key, self.get_head_base());
                 (base_node, vec![])
             } else {
-                let (mut base_node, indexs) = self.search_last_le_in_index(key, Operation::Add);
+                let (base_node, indexs) = self.search_last_le_in_index(key, Operation::Add);
                 let node = self.search_last_le_in_base(key, base_node.unwrap());
                 (node, indexs)
             };
@@ -336,6 +354,66 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
 
     // ---------private-------------
 
+    fn search_node<C: Context<K, V>>(&self, context: &mut C) {
+        //     1. handle empty
+        if self.is_empty() {
+            return;
+        }
+        match self.get_head_index() {
+            Some(head_index) => {
+                // can't match in index, search in base
+                if !context.is_index_match(&head_index) {
+                    self.search_in_base_refactor(self.get_head_base(), context);
+                    return;
+                }
+                let mut current_index = head_index;
+                loop {
+                    // 1. find the fist node which key is less the search key
+                    let first_node = current_index.to_iter().find(|n| context.is_index_match(n));
+                    // record if is set/remove op
+                    match first_node {
+                        //      search in level if exist, call context
+                        Some(n) => {
+                            context.visit_index(n.clone());
+                            let child_node = n.get_child();
+                            match child_node {
+                                //  continue loop
+                                IndexNodeChild::Index(n) => {
+                                    current_index = n;
+                                }
+                                // return if is base
+                                IndexNodeChild::Base(n) => {
+                                    self.search_in_base_refactor(n, context);
+                                    return;
+                                }
+                            }
+                        }
+                        // already check first index is matched
+                        None => {
+                            panic!("")
+                        }
+                    }
+                }
+            }
+            //     search in base
+            None => {
+                self.search_in_base_refactor(self.get_head_base(), context);
+            }
+        }
+    }
+
+    fn search_in_base_refactor<C: Context<K, V>>(
+        &self,
+        start_node: BaseNode<K, V>,
+        context: &mut C,
+    ) {
+        let mut iter = BaseNodeIterator::new(Some(start_node));
+        let found = iter.find(|n| context.is_base_node_match(n));
+        if let Some(n) = found {
+            context.visit_matched_base(n);
+        }
+    }
+
     fn inc_len(&mut self) {
         self.len += 1;
     }
@@ -355,7 +433,7 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
     ) -> Option<BaseNode<K, V>> {
         assert!(self.len() >= 1);
         assert!(key >= self.get_head_base().get_key());
-        let mut base_node_iter = SkipListIter::new(Some(start_node));
+        let mut base_node_iter = BaseNodeIterator::new(Some(start_node));
         let node = base_node_iter.find(|n| is_match(n, key));
         node
     }
@@ -490,6 +568,10 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
     }
 
     fn get_head_index(&self) -> Option<IndexNode<K, V>> {
+        if self.indexes.is_empty() {
+            return None;
+        }
+
         self.indexes.get(&(self.indexes.len() - 1)).cloned()
     }
 

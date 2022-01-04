@@ -21,6 +21,11 @@ impl<K: Copy + PartialOrd, V> Clone for BaseNode<K, V> {
         }
     }
 }
+impl<K: Copy + PartialOrd, V: Copy> BaseNode<K, V> {
+    pub fn get_value(&self) -> V {
+        self.get_ref().value.clone()
+    }
+}
 
 impl<K: Copy + PartialOrd, V> BaseNode<K, V> {
     pub fn new(key: K, value: V, right: Option<BaseNode<K, V>>) -> BaseNode<K, V> {
@@ -41,11 +46,6 @@ impl<K: Copy + PartialOrd, V> BaseNode<K, V> {
         f(&self.get_ref().value)
     }
 
-    // pub fn get_value(&self) -> Rc<RefCell<V>> {
-    //     let v = self.get_mut_ref();
-    //     let tmp = v.value;
-    //     tmp
-    // }
     pub fn get_node(&self) -> Rc<RefCell<BaseNodeInner<K, V>>> {
         self.node.clone()
     }
@@ -154,17 +154,23 @@ impl<K: Copy + PartialOrd, V> IndexNode<K, V> {
     }
 }
 
-pub struct SkipListIter<K: Copy + PartialOrd, V> {
+pub struct BaseNodeIterator<K: Copy + PartialOrd, V> {
     node: Option<BaseNode<K, V>>,
 }
 
-impl<K: Copy + PartialOrd, V> SkipListIter<K, V> {
+// impl <K,V>BaseNodeIterator<K,V>{
+//     pub fn new(node:BaseNode<K,V>)->BaseNodeIterator<K,V>{
+//         BaseNodeIterator{node:Some(node)}
+//     }
+// }
+
+impl<K: Copy + PartialOrd, V> BaseNodeIterator<K, V> {
     pub fn new(node: Option<BaseNode<K, V>>) -> Self {
-        SkipListIter { node }
+        BaseNodeIterator { node }
     }
 }
 
-impl<K: Copy + PartialOrd, V> Iterator for SkipListIter<K, V> {
+impl<K: Copy + PartialOrd, V> Iterator for BaseNodeIterator<K, V> {
     type Item = BaseNode<K, V>;
 
     fn next(&mut self) -> Option<Self::Item> {
