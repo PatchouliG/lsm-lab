@@ -2,7 +2,7 @@
 #![allow(unused_variables)]
 #![allow(unused_imports)]
 
-use super::context::{Context, DebugContext};
+use super::context::{Context, ContextImpRefactor, DebugContext};
 use super::node::{BaseNode, BaseNodeIterator, IndexNode, IndexNodeChild};
 use std::borrow::{Borrow, BorrowMut};
 use std::cell::{Ref, RefCell};
@@ -75,6 +75,7 @@ enum Operation {
 
 use crate::skip_list::node::{BaseNodeInner, IndexNodeIterator};
 use serde::{Deserialize, Serialize};
+use std::alloc::handle_alloc_error;
 
 #[derive(Serialize, Deserialize)]
 pub struct Graph<K, V> {
@@ -241,111 +242,99 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         //     if get .fix node on path
     }
     pub fn add(&mut self, key: K, value: V) {
-        if self.is_empty() {
-            let base_node = BaseNode::new(key, value, None);
-            self.base_head = Some(base_node);
-            self.inc_len();
-            return;
-        }
-        // insert to head if key is less then head key
-        let head = self.get_head_base();
+        let mut context = ContextImpRefactor::new(key, SkipList::check_base, SkipList::check_index);
+        self.search_node(&mut context);
 
-        if head.get_key().gt(&key) {
-            let base_node = BaseNode::new(key, value, Some(head));
-            self.base_head = Some(base_node.clone());
-            self.inc_len();
-            self.fix_index_nodes(key, vec![], base_node);
-            return;
-        }
+        match context.get_base() {
+            Some(mut n) => {
+                // override
+                if n.get_key() == key {
+                    n.set_value(value);
+                } else {
+                    assert!(
+                        n.get_key() < key
+                            || (n.get_right_node().is_none()
+                                || n.get_right_node().unwrap().get_key() > key)
+                    );
 
-        // head index is more than key, visit base
-        let (base_node, indexs) =
-            if !self.has_index_level() || self.get_head_index().unwrap().get_key() > key {
-                let base_node = self.search_last_le_in_base(key, self.get_head_base());
-                (base_node, vec![])
-            } else {
-                let (base_node, indexs) = self.search_last_le_in_index(key, Operation::Add);
-                let node = self.search_last_le_in_base(key, base_node.unwrap());
-                (node, indexs)
-            };
-        self.handle_add(key, value, base_node, indexs);
-        return;
+                    let base_node = BaseNode::new(key, value, n.get_right_node().clone());
+                    n.set_right_node(Some(base_node.clone()));
+                    self.inc_len();
+                    self.fix_index_nodes(key, context.get_index(), base_node);
+                }
+            }
+            // insert to head
+            None => {
+                assert!(self.is_empty() || self.get_head_base().get_key() > key);
+                let base_node = BaseNode::new(key, value, self.base_head.clone());
+                self.inc_len();
+                self.base_head = Some(base_node.clone());
+                self.fix_index_nodes(key, vec![], base_node);
+            }
+        }
     }
     pub fn map_value<T>(&self, key: K, f: fn(&V) -> T) -> Option<T> {
-        // handle empty
-        if self.len() == 0 {
-            return None;
+        let mut context = ContextImpRefactor::new(key, SkipList::check_base, SkipList::check_index);
+        self.search_node(&mut context);
+        if let Some(n) = context.get_base() {
+            if n.get_key() == key {
+                return context.get_base().map(|n| n.map_value(f));
+            }
         }
-        // check first base node
-        let head = self.get_head_base();
-        if head.get_key() > key {
-            return None;
-        }
-        // handle one level case
-        let node_founded =
-            if !self.has_index_level() || self.get_head_index().unwrap().get_key() > key {
-                let head = self.get_head_base();
-                self.search_last_le_in_base(key, head)
-            } else {
-                let (base, _) = self.search_last_le_in_index(key, Operation::Get);
-                self.search_last_le_in_base(key, base.unwrap())
-            };
-
-        if node_founded.get_key() == key {
-            return Some(node_founded.map_value(f));
-        } else {
-            return None;
-        }
+        return None;
     }
     pub fn remove(&mut self, key: K) {
-        // handle empty
-        if self.is_empty() {
-            return;
-        }
+        let mut context = ContextImpRefactor::new(key, SkipList::check_base, SkipList::check_index);
+        self.search_node(&mut context);
 
-        // check head
-        if self.get_head_base().get_key() == key {
-            self.base_head = self.base_head.as_ref().unwrap().get_right_node();
-            return;
-        }
-
-        // handle one levels,len -=1
-        if !self.has_index_level() {
-            let node_before = self.search_in_base(key, self.get_head_base(), |node, key| {
-                if let Some(right) = node.get_right_node() {
-                    if right.get_key() == key {
-                        return true;
-                    }
-                }
-                return false;
-            });
-            match node_before {
-                Some(mut n) => {
-                    n.set_right_node(n.get_right_node().unwrap().get_right_node());
-                }
-                None => {}
-            }
-        } else {
-            // let (node_before, indexs) =
-            //     self.search_in_index(key, Operation::Remove, |node, key| {
-            //         if let Some(right) = node.get_right_node() {
-            //             if right.get_key() > key {
-            //                 return true;
-            //             }
-            //         }
-            //         return false;
-            //     });
-            // match node_before {
-            //     Some(mut n) => {
-            //         self.search_in_base(key,on)
-            //         n.set_right_node(n.get_right_node().unwrap().get_right_node());
-            //     }
-            //     None => {}
-            // }
-        }
-        // todo continue handle list has level index
-        // visit by visit handle
-        // unimplemented!()
+        // // handle empty
+        // if self.is_empty() {
+        //     return;
+        // }
+        //
+        // // check head
+        // if self.get_head_base().get_key() == key {
+        //     self.base_head = self.base_head.as_ref().unwrap().get_right_node();
+        //     return;
+        // }
+        //
+        // // handle one levels,len -=1
+        // if !self.has_index_level() {
+        //     let node_before = self.search_in_base(key, self.get_head_base(), |node, key| {
+        //         if let Some(right) = node.get_right_node() {
+        //             if right.get_key() == key {
+        //                 return true;
+        //             }
+        //         }
+        //         return false;
+        //     });
+        //     match node_before {
+        //         Some(mut n) => {
+        //             n.set_right_node(n.get_right_node().unwrap().get_right_node());
+        //         }
+        //         None => {}
+        //     }
+        // } else {
+        //     // let (node_before, indexs) =
+        //     //     self.search_in_index(key, Operation::Remove, |node, key| {
+        //     //         if let Some(right) = node.get_right_node() {
+        //     //             if right.get_key() > key {
+        //     //                 return true;
+        //     //             }
+        //     //         }
+        //     //         return false;
+        //     //     });
+        //     // match node_before {
+        //     //     Some(mut n) => {
+        //     //         self.search_in_base(key,on)
+        //     //         n.set_right_node(n.get_right_node().unwrap().get_right_node());
+        //     //     }
+        //     //     None => {}
+        //     // }
+        // }
+        // // todo continue handle list has level index
+        // // visit by visit handle
+        // // unimplemented!()
     }
 
     pub fn len(&self) -> usize {
@@ -353,6 +342,35 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
     }
 
     // ---------private-------------
+
+    fn check_index(node: &IndexNode<K, V>, key: K) -> bool {
+        match node.get_right_node() {
+            Some(right) => right.get_key() > key,
+            None => true,
+        }
+    }
+    // return true to stop search
+    fn check_base(node: &BaseNode<K, V>, key: K) -> bool {
+        if key == node.get_key() {
+            true
+        } else {
+            match node.get_right_node() {
+                Some(n) => n.get_key() > key,
+                None => true,
+            }
+        }
+    }
+    // return true to stop search
+    fn check_base_for_remove(node: &BaseNode<K, V>, key: K) -> bool {
+        if key == node.get_key() {
+            true
+        } else {
+            match node.get_right_node() {
+                Some(n) => n.get_key() > key,
+                None => true,
+            }
+        }
+    }
 
     fn search_node<C: Context<K, V>>(&self, context: &mut C) {
         //     1. handle empty
@@ -362,8 +380,11 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         match self.get_head_index() {
             Some(head_index) => {
                 // can't match in index, search in base
-                if !context.is_index_match(&head_index) {
-                    self.search_in_base_refactor(self.get_head_base(), context);
+                if head_index.get_key() > context.get_key() {
+                    if self.get_head_base().get_key() <= context.get_key() {
+                        self.search_in_base_refactor(self.get_head_base(), context);
+                    }
+                    // return None for insert head
                     return;
                 }
                 let mut current_index = head_index;
@@ -408,7 +429,7 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         context: &mut C,
     ) {
         let mut iter = BaseNodeIterator::new(Some(start_node));
-        let found = iter.find(|n| context.is_base_node_match(n));
+        let found = iter.find(|n| context.check_base(n));
         if let Some(n) = found {
             context.visit_matched_base(n);
         }
@@ -628,7 +649,7 @@ mod test {
         list.add(-1, -1);
         list.add(-2, -2);
         list.add(4, 4);
-        list.to_graph();
+        list.print();
         let mut iter = list.to_iter();
         assert_eq!((&iter.next().unwrap().borrow().get_key()), &-2);
         assert_eq!((&iter.next().unwrap().borrow().get_key()), &-1);
@@ -642,13 +663,18 @@ mod test {
     }
 
     #[test]
+    fn test_add_to_empty_list() {}
+    #[test]
+    fn test_add_to_list_head() {
+        // "add 1"
+        // "add 0"
+    }
+    #[test]
     fn test_add_list() {
         let mut list: SkipList<i32, i32> = SkipList::new();
         list.add(1, 1);
         assert_eq!(1, list.len);
-        assert_eq!(0, list.indexes.len());
         assert_eq!(true, list.base_head.is_some());
-        assert_eq!(false, list.has_index_level());
 
         list.add(2, 2);
         assert_eq!(2, list.len);
@@ -656,7 +682,7 @@ mod test {
         list.add(-1, 2);
         assert_eq!(
             list.to_string(),
-            r#"{"base":[[-1,2],[1,1],[2,2]],"index":{"0":[-1,2]}}"#
+            r#"{"base":[[-1,2],[1,1],[2,2]],"index":{"0":[-1,1,2]}}"#
         );
     }
 

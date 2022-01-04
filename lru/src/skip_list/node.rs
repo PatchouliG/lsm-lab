@@ -158,12 +158,6 @@ pub struct BaseNodeIterator<K: Copy + PartialOrd, V> {
     node: Option<BaseNode<K, V>>,
 }
 
-// impl <K,V>BaseNodeIterator<K,V>{
-//     pub fn new(node:BaseNode<K,V>)->BaseNodeIterator<K,V>{
-//         BaseNodeIterator{node:Some(node)}
-//     }
-// }
-
 impl<K: Copy + PartialOrd, V> BaseNodeIterator<K, V> {
     pub fn new(node: Option<BaseNode<K, V>>) -> Self {
         BaseNodeIterator { node }

@@ -9,7 +9,8 @@ pub trait Context<K: Copy + PartialOrd, V> {
             None => true,
         }
     }
-    fn is_base_node_match(&self, node: &BaseNode<K, V>) -> bool {
+    // return true to stop search
+    fn check_base(&self, node: &BaseNode<K, V>) -> bool {
         self.get_key() == node.get_key()
     }
     fn visit_index(&mut self, node: IndexNode<K, V>);
@@ -49,6 +50,59 @@ impl<K: Copy + PartialOrd + Display, V: Copy + Display> Context<K, V> for DebugC
                 node.get_value()
             ))
             .unwrap();
+    }
+}
+
+pub struct ContextImpRefactor<K: Copy + PartialOrd, V> {
+    key: K,
+    index_nodes_on_path: Vec<IndexNode<K, V>>,
+    base_node: Option<BaseNode<K, V>>,
+    base_checker: fn(&BaseNode<K, V>, K) -> bool,
+    index_checker: fn(&IndexNode<K, V>, K) -> bool,
+}
+
+impl<K: Copy + PartialOrd, V> ContextImpRefactor<K, V> {
+    pub fn new(
+        key: K,
+        base_check: fn(&BaseNode<K, V>, K) -> bool,
+        index_check: fn(&IndexNode<K, V>, K) -> bool,
+    ) -> ContextImpRefactor<K, V> {
+        ContextImpRefactor {
+            key,
+            index_nodes_on_path: vec![],
+            base_node: None,
+            base_checker: base_check,
+            index_checker: index_check,
+        }
+    }
+
+    pub fn get_base(&self) -> Option<BaseNode<K, V>> {
+        self.base_node.clone()
+    }
+    pub fn get_index(self) -> Vec<IndexNode<K, V>> {
+        self.index_nodes_on_path
+    }
+}
+
+impl<K: Copy + PartialOrd, V> Context<K, V> for ContextImpRefactor<K, V> {
+    fn get_key(&self) -> K {
+        self.key
+    }
+
+    fn is_index_match(&self, node: &IndexNode<K, V>) -> bool {
+        (self.index_checker)(node, self.key)
+    }
+
+    fn check_base(&self, node: &BaseNode<K, V>) -> bool {
+        (self.base_checker)(node, self.key)
+    }
+
+    fn visit_index(&mut self, node: IndexNode<K, V>) {
+        self.index_nodes_on_path.push(node);
+    }
+
+    fn visit_matched_base(&mut self, node: BaseNode<K, V>) {
+        self.base_node = Some(node);
     }
 }
 
