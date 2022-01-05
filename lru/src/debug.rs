@@ -10,9 +10,9 @@ mod debug {
         a: T,
     }
 
-    impl<T> A<T> {
-        fn foo() -> usize {
-            3
+    impl<T> Drop for A<T> {
+        fn drop(&mut self) {
+            println!("hi");
         }
     }
 
@@ -49,7 +49,20 @@ mod debug {
             println!("{}", j);
             let a: Address = serde_json::from_str(&j)?;
             println!("{}", a.street);
-            Ok(())
+        }
+        use super::A;
+        use std::borrow::Borrow;
+        use std::cell::RefCell;
+        use std::sync::{Arc, Mutex};
+        use std::thread::spawn;
+
+        #[test]
+        fn test() {
+            let a = Box::new(A { a: 3 });
+            let b = Box::into_raw(a);
+            unsafe {
+                Box::from_raw(b);
+            }
         }
 
         use log::{info, warn};

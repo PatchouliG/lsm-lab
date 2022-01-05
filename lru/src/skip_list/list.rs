@@ -2,7 +2,7 @@
 #![allow(unused_variables)]
 #![allow(unused_imports)]
 
-use super::context::{Context, ContextImpRefactor, DebugContext};
+use super::context::{Context, ContextImpRefactor, DebugContext,VisitorBaseDirection,VisitorIndexDirection};
 use super::node::{BaseNode, BaseNodeIterator, IndexNode, IndexNodeChild};
 use std::borrow::{Borrow, BorrowMut};
 use std::cell::{Ref, RefCell};
@@ -380,22 +380,23 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         match self.get_head_index() {
             Some(head_index) => {
                 // can't match in index, search in base
-                if head_index.get_key() > context.get_key() {
-                    if self.get_head_base().get_key() <= context.get_key() {
-                        self.search_in_base_refactor(self.get_head_base(), context);
-                    }
-                    // return None for insert head
-                    return;
-                }
+                // if head_index.get_key() > context.get_key() {
+                //     if self.get_head_base().get_key() <= context.get_key() {
+                //         self.search_in_base_refactor(self.get_head_base(), context);
+                //     }
+                //     return None for insert head
+                    // return;
+                // }
                 let mut current_index = head_index;
+                let current_level=self
                 loop {
                     // 1. find the fist node which key is less the search key
-                    let first_node = current_index.to_iter().find(|n| context.is_index_match(n));
+                    let first_node = current_index.to_iter().find(|n| context.visit_index(n)==VisitorIndexDirection::Down);
                     // record if is set/remove op
                     match first_node {
                         //      search in level if exist, call context
                         Some(n) => {
-                            context.visit_index(n.clone());
+                            // context.visit_index(n.clone());
                             let child_node = n.get_child();
                             match child_node {
                                 //  continue loop
@@ -431,7 +432,7 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         let mut iter = BaseNodeIterator::new(Some(start_node));
         let found = iter.find(|n| context.check_base(n));
         if let Some(n) = found {
-            context.visit_matched_base(n);
+            context.visit_base(n);
         }
     }
 

@@ -1,20 +1,28 @@
 use crate::skip_list::node::{BaseNode, IndexNode};
 use std::fmt::{Display, Write};
 
+pub enum VisitorIndexDirection {
+    Down,
+    Right,
+}
+pub enum VisitorBaseDirection {
+    Stop,
+    Right,
+}
 pub trait Context<K: Copy + PartialOrd, V> {
     fn get_key(&self) -> K;
-    fn is_index_match(&self, node: &IndexNode<K, V>) -> bool {
-        match node.get_right_node() {
-            Some(right) => right.get_key() > self.get_key(),
-            None => true,
-        }
-    }
+    // fn is_index_match(&self, node: &IndexNode<K, V>) -> bool {
+    //     match node.get_right_node() {
+    //         Some(right) => right.get_key() > self.get_key(),
+    //         None => true,
+    //     }
+    // }
     // return true to stop search
-    fn check_base(&self, node: &BaseNode<K, V>) -> bool {
-        self.get_key() == node.get_key()
-    }
-    fn visit_index(&mut self, node: IndexNode<K, V>);
-    fn visit_matched_base(&mut self, node: BaseNode<K, V>);
+    // fn check_base(&self, node: &BaseNode<K, V>) -> bool {
+    //     self.get_key() == node.get_key()
+    // }
+    fn visit_index(&mut self, node: &IndexNode<K, V>) -> VisitorIndexDirection;
+    fn visit_base(&mut self, node: &BaseNode<K, V>) -> VisitorBaseDirection;
 }
 
 // just print
@@ -42,7 +50,7 @@ impl<K: Copy + PartialOrd + Display, V: Copy + Display> Context<K, V> for DebugC
             .unwrap();
     }
 
-    fn visit_matched_base(&mut self, node: BaseNode<K, V>) {
+    fn visit_base(&mut self, node: BaseNode<K, V>) {
         self.output
             .write_fmt(format_args!(
                 "visitor base key:{},value:{}\n",
@@ -101,7 +109,7 @@ impl<K: Copy + PartialOrd, V> Context<K, V> for ContextImpRefactor<K, V> {
         self.index_nodes_on_path.push(node);
     }
 
-    fn visit_matched_base(&mut self, node: BaseNode<K, V>) {
+    fn visit_base(&mut self, node: BaseNode<K, V>) {
         self.base_node = Some(node);
     }
 }
