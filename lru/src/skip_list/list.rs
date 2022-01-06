@@ -2,7 +2,11 @@
 #![allow(unused_variables)]
 #![allow(unused_imports)]
 
+<<<<<<< Updated upstream
 use super::context::{Context, ContextImpRefactor, DebugContext,VisitorBaseDirection,VisitorIndexDirection};
+=======
+use super::context::{Context, ContextImpRefactor, DebugContext, VisitDirection};
+>>>>>>> Stashed changes
 use super::node::{BaseNode, BaseNodeIterator, IndexNode, IndexNodeChild};
 use std::borrow::{Borrow, BorrowMut};
 use std::cell::{Ref, RefCell};
@@ -76,6 +80,11 @@ enum Operation {
 use crate::skip_list::node::{BaseNodeInner, IndexNodeIterator};
 use serde::{Deserialize, Serialize};
 use std::alloc::handle_alloc_error;
+<<<<<<< Updated upstream
+=======
+use std::cmp::Ordering;
+use std::fs::read_to_string;
+>>>>>>> Stashed changes
 
 #[derive(Serialize, Deserialize)]
 pub struct Graph<K, V> {
@@ -377,6 +386,7 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         if self.is_empty() {
             return;
         }
+<<<<<<< Updated upstream
         match self.get_head_index() {
             Some(head_index) => {
                 // can't match in index, search in base
@@ -422,6 +432,113 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
                 self.search_in_base_refactor(self.get_head_base(), context);
             }
         }
+=======
+        let mut current_left_index = None;
+        let mut current_right_index = None;
+        let base_node_op;
+        //     iterate
+        match self.get_head_index() {
+            Some(head) => {
+                let mut iter = head.to_iter();
+                loop {
+                    current_left_index = current_right_index;
+                    current_right_index = iter.next();
+                    let direction = self.visit_index(
+                        context.get_key(),
+                        current_left_index.clone(),
+                        current_right_index.clone(),
+                    );
+                    match direction {
+                        VisitDirection::Stop => {
+                            return;
+                        }
+                        VisitDirection::Right => {}
+                        VisitDirection::Down => {
+                            assert!(current_left_index.is_some());
+                            let child = current_left_index.unwrap().get_child();
+                            match child {
+                                IndexNodeChild::Index(n) => {
+                                    iter = n.to_iter();
+                                }
+                                IndexNodeChild::Base(n) => {
+                                    base_node_op = Some(n);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            None => {
+                base_node_op = self.base_head.clone();
+            }
+        }
+
+        let base_node = base_node_op.unwrap_or(self.get_head_base());
+        let base_node_iter = BaseNodeIterator::new(Some(base_node));
+        loop{
+            let base = base_node_iter.next();
+            match base{
+                Some(n)=>{
+                    let direction=self.visit_base(key,base_node)
+                }
+                None=>{
+                //     todo not found
+                }
+            }
+        }
+
+        //     call context check
+        //     check direction, save index if need
+        //
+
+        // }
+        // match self.get_head_index() {
+        //     Some(head_index) => {
+        //         // can't match in index, search in base
+        //         if head_index.get_key() > context.get_key() {
+        //             if self.get_head_base().get_key() <= context.get_key() {
+        //                 self.search_in_base_refactor(self.get_head_base(), context);
+        //             }
+        //             // return None for insert head
+        //             return;
+        //         }
+        //         let mut current_index = head_index;
+        //         loop {
+        //             // 1. find the fist node which key is less the search key
+        //             let first_node = current_index.to_iter().find(|n| context.is_index_match(n));
+        //             // record if is set/remove op
+        //             match first_node {
+        //                 //      search in level if exist, call context
+        //                 Some(n) => {
+        //                     context.visit_index(n.clone());
+        //                     let child_node = n.get_child();
+        //                     match child_node {
+        //                         //  continue loop
+        //                         IndexNodeChild::Index(n) => {
+        //                             current_index = n;
+        //                         }
+        //                         // return if is base
+        //                         IndexNodeChild::Base(n) => {
+        //                             self.search_in_base_refactor(n, context);
+        //                             return;
+        //                         }
+        //                     }
+        //                 }
+        //                 // already check first index is matched
+        //                 None => {
+        //                     panic!("")
+        //                 }
+        //             }
+        //         }
+        //     }
+        //     //     search in base
+        //     None => {
+        //         self.search_in_base_refactor(self.get_head_base(), context);
+        //     }
+        // }
+        unimplemented!()
+>>>>>>> Stashed changes
     }
 
     fn search_in_base_refactor<C: Context<K, V>>(
@@ -429,11 +546,20 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         start_node: BaseNode<K, V>,
         context: &mut C,
     ) {
+<<<<<<< Updated upstream
         let mut iter = BaseNodeIterator::new(Some(start_node));
         let found = iter.find(|n| context.check_base(n));
         if let Some(n) = found {
             context.visit_base(n);
         }
+=======
+        unimplemented!()
+        // let mut iter = BaseNodeIterator::new(Some(start_node));
+        // let found = iter.find(|n| context.check_base(n));
+        // if let Some(n) = found {
+        //     context.visit_matched_base(n);
+        // }
+>>>>>>> Stashed changes
     }
 
     fn inc_len(&mut self) {
@@ -597,6 +723,56 @@ impl<K: Copy + PartialOrd, V> SkipList<K, V> {
         self.indexes.get(&(self.indexes.len() - 1)).cloned()
     }
 
+<<<<<<< Updated upstream
+=======
+    fn visit_base(&self, key: K, node: BaseNode<K, V>) -> VisitDirection {
+        match node.get_key().partial_cmp(&key) {
+            Some(n) => match n {
+                Ordering::Less => VisitDirection::Right,
+                Ordering::Greater | Ordering::Equal => VisitDirection::Stop,
+            },
+            None => {
+                panic!("error")
+            }
+        }
+    }
+
+    fn visit_index(
+        &self,
+        key: K,
+        left_option: Option<IndexNode<K, V>>,
+        right_option: Option<IndexNode<K, V>>,
+    ) -> VisitDirection {
+        match (left_option, right_option) {
+            (Some(left), Some(right)) => {
+                if right.get_key() > key {
+                    VisitDirection::Down
+                } else {
+                    VisitDirection::Right
+                //     todo save to path
+                }
+            }
+            // last node
+            (Some(left), None) => {
+                assert!(left.get_key() <= key);
+                VisitDirection::Down
+            }
+            // first node
+            (None, Some(right)) => {
+                if right.get_key() > key {
+                    VisitDirection::Down
+                } else {
+                    VisitDirection::Right
+                }
+            }
+            (None, None) => {
+                panic!("error")
+            }
+        }
+    }
+
+    // todo bug
+>>>>>>> Stashed changes
     fn random_level(&self) -> usize {
         let max_level = max_level(self.len);
         if max_level == 0 {
