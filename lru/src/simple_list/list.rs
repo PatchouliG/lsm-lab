@@ -149,7 +149,7 @@ impl<K: Copy + PartialOrd, V> List<K, V> {
         }
     }
 
-    pub fn clean_deleted_node(&mut self) {
+    pub fn clean_deleted_node(&self) {
         unsafe {
             // find first node not deleted
             let mut node_ptr = self.head.load(Ordering::SeqCst);
@@ -614,7 +614,7 @@ mod test {
 
     #[test]
     fn test_clean_delete_node() {
-        let mut l = List::new();
+        let l = List::new();
 
         // delete empty list
         l.delete(0);

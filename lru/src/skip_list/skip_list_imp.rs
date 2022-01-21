@@ -6,7 +6,7 @@ use crate::rand::simple_rand::Rand;
 use crate::simple_list::list::{List, ListSearchResult};
 use crate::simple_list::node::Node;
 use crate::skip_list::search_result::NodeSearchResult;
-use std::borrow::Borrow;
+use std::borrow::{Borrow, BorrowMut};
 use std::cell::RefCell;
 use std::error::Error;
 use std::fmt;
@@ -208,6 +208,16 @@ impl<K: Copy + PartialOrd, V> SkipListImp<K, V> {
         search_result
     }
     fn gc_when_necessary(&self) {}
+
+    fn clean_deleted_node(&self) {
+        let level = self.base_level();
+        (level.borrow() as &List<K, V>).clean_deleted_node();
+        for level_number in 1..self.current_max_level() {
+            let level = self.get_index_level(level_number);
+            (level.borrow() as &List<K, Ref<K, V>>).clean_deleted_node();
+        }
+    }
+
     fn len(&self) -> usize {
         self.base.len()
     }
@@ -309,19 +319,21 @@ mod test {
     }
 
     #[test]
-    #[ignore]
+    fn test_clean() {
+        let sk = build_list_for_test();
+        println!("{}", sk);
+        sk.remove(17);
+        sk.clean_deleted_node();
+        println!("{}", sk);
+
+        sk.remove(15);
+        println!("{}", sk);
+        sk.clean_deleted_node();
+        println!("{}", sk);
+    }
+    #[test]
     fn test_remove() {
-        let sk = SkipListImp::new();
-        sk.remove(1);
-        assert_eq!(sk.len(), 0);
-
-        for i in 0..16 {
-            sk.add(i * 2, i, 0);
-        }
-        sk.add(21, 21, 3);
-        sk.add(15, 20, 3);
-        sk.add(17, 20, 1);
-
+        let sk = build_list_for_test();
         sk.remove(17);
         assert_eq!(format!("{}", sk), "(15:(ref base 15):false)(21:(ref base 21):false)
 (15:(ref level 15):false)(17:(ref base 17):true)(21:(ref level 21):false)
@@ -342,21 +354,26 @@ mod test {
         sk.remove(28);
         assert!(sk.get(28).is_none());
 
-        assert_eq!(sk.len(), 16);
+        assert_eq!(sk.len(), 14);
     }
 
     #[test]
     fn test_level() {
+        let sk = build_list_for_test();
+        println!("{}", sk);
+        let res = sk.get_with_debug(18);
+        println!("{}", res.1);
+    }
+
+    fn build_list_for_test() -> SkipListImp<i32, i32> {
         let sk = SkipListImp::new();
         for i in 0..16 {
             sk.add(i * 2, i, 0);
         }
         sk.add(21, 21, 3);
-        sk.add(17, 20, 1);
         sk.add(15, 20, 3);
-        println!("{}", sk);
-        let res = sk.get_with_debug(18);
-        println!("{}", res.1);
+        sk.add(17, 20, 1);
+        sk
     }
 
     #[test]
