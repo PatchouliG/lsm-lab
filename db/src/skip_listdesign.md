@@ -1,26 +1,23 @@
-## 线程安全
+## 线程安全的跳表
 
-操作，add（包括overwrite），get，delete
+### 支持的操作
+add（包括overwrite），get，delete
+所有操作都是无锁的
+delete 只是进行标记不进行回收，达到一定数量后由gc进行回收
+gc操作需要block所有其他的操作
+add操作通过对node的next_node进行cas操作实现无锁
 
 ## 实现
 
-每一层是一个线程安全的list 上层维护底层的raw point（并不是owner） level 0：(key,value)
-level n(n>1):(key,point to level node)
+### 结构
 
-index node(level node > 0) 不会也不能出现重复key base
-node可以出现重复key，因为delete只会给node打上delete标签，后续insert会在delete node后加入
+每一层是一个线程安全的list 
+对于level>0,保存指向下层list的节点的引用
+术语
+index node:level >0 的node 用于加速查找
+base node:level =0 的node 
 
-## list 需要增加的功能
-
-- [ ] cas insert
-
-- [x] 从某个节点开始寻找,找到最后一个小于或者等于的节点
-
-- [x] gc去掉，gc由skiplist完成
-
-- [x] add 返回增加（也可能是overwrite）节点的raw point
-
-## question
+## remove
 
 如何删除 只是对 base list，进行删除mark，上层节点不需要处理，后续由gc完成回收, 因为list删除后增加的node会放在最后一个delete
 node，所以结构是这样的 某个key第一次增加到list

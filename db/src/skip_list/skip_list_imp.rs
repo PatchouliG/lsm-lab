@@ -3,8 +3,8 @@
 #![allow(unused_imports)]
 
 use crate::rand::simple_rand::Rand;
-use crate::simple_list::list::{List, ListSearchResult};
-use crate::simple_list::node::Node;
+use crate::skip_list::list_mod::list::{List, ListSearchResult};
+use crate::skip_list::list_mod::node::Node;
 use crate::skip_list::search_result::NodeSearchResult;
 use std::borrow::{Borrow, BorrowMut};
 use std::cell::RefCell;
@@ -12,14 +12,14 @@ use std::error::Error;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::Add;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 
 const MAX_LEVEL: usize = 16;
 // todo wrap skipimp
 // struct SkipList<K: Copy + PartialOrd, V> {}
 
-// todo need add arc,skip list need thread safe
+// todo need add arc,skip list_mod need thread safe
 struct SkipListImp<K: Copy + PartialOrd, V> {
     // levels len is MAX_LEVEL
     // not all level are in use
@@ -172,7 +172,7 @@ impl<K: Copy + PartialOrd, V> SkipListImp<K, V> {
                 for level in (1..start_level + 1).rev() {
                     let list = self.get_index_level(level);
                     // res won't be none
-                    // (A) call list search_last_node_less_or_equal, use list head as start
+                    // (A) call list_mod search_last_node_less_or_equal, use list_mod head as start
                     let res = List::get_last_node_eq_or_less(key, start_node).unwrap();
                     search_result.save_index_node(list, res.last_node_less_or_equal, res.next_node);
                     unsafe {

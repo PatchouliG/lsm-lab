@@ -295,13 +295,13 @@ mod skip_list {
         }
     }
     // 1.  find nearest base node
-    // a. handle emtpy list
+    // a. handle emtpy list_mod
     // b. find nearest index node in this level
     // c. go to lower level ,if is base to 2, else to b
     // 2. check base node one by one
 
     #[cfg(test)]
-    // remember test head ,tail node and empty list
+    // remember test head ,tail node and empty list_mod
     mod test {
         use super::max_level;
         use crate::skip_list_old_back::skip_list::SkipList;
@@ -312,7 +312,7 @@ mod skip_list {
             assert_eq!(list.len, 0);
             assert_eq!(list.indexes.len(), 0);
             assert_eq!(list.base_head.is_none(), true);
-            //     create new skip list
+            //     create new skip list_mod
             //     check fielda lens ,indexs etc
         }
 
@@ -355,7 +355,7 @@ mod skip_list {
 
             list.add(-1, 2);
 
-            //     add k,v to list
+            //     add k,v to list_mod
             //     check field
         }
 
@@ -371,7 +371,7 @@ mod skip_list {
         }
 
         fn test_remove_list() {
-            //     remove from list
+            //     remove from list_mod
             //     check field
         }
 

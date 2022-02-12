@@ -1,6 +1,6 @@
-use crate::simple_list::list::List;
-use crate::simple_list::list::ListSearchResult;
-use crate::simple_list::node::Node;
+use crate::skip_list::list_mod::list::List;
+use crate::skip_list::list_mod::list::ListSearchResult;
+use crate::skip_list::list_mod::node::Node;
 use crate::skip_list::skip_list_imp::Ref;
 use std::borrow::Borrow;
 use std::fmt::{Display, Formatter};
@@ -10,6 +10,7 @@ struct LevelInfo<K: Copy + PartialOrd, V> {
     list: Arc<List<K, V>>,
     res: ListSearchResult<K, V>,
 }
+// find all index node and base node in search
 pub struct NodeSearchResult<K: Copy + PartialOrd, V> {
     // FIFO
     // (highest level .... level 1)

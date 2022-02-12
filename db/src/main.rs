@@ -1,5 +1,4 @@
 extern crate db;
-use db::simple_list::bench::bench_with_default;
 use std::borrow::{Borrow, BorrowMut};
 use std::fs::File;
 use std::io::Write;
@@ -9,5 +8,4 @@ use std::time::Duration;
 
 fn main() {
     println!("start");
-    bench_with_default();
 }

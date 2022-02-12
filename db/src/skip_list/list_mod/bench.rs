@@ -230,7 +230,7 @@ impl Worker {
 
 #[cfg(test)]
 mod test {
-    use crate::simple_list::bench::{bench_test_all, bench_with_default, Key};
+    use crate::skip_list::list_mod::bench::{bench_test_all, bench_with_default, Key};
     // #[test]
     // fn test_bench() {
     //     bench_test_all(2, 1000);

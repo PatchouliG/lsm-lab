@@ -12,8 +12,8 @@ use std::sync::atomic::{AtomicI64, AtomicI8, AtomicPtr, Ordering};
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard};
 use std::time::Duration;
 
-use crate::simple_list::node::test::Item;
-use crate::simple_list::node::Node;
+use crate::skip_list::list_mod::node::test::Item;
+use crate::skip_list::list_mod::node::Node;
 use std::alloc::handle_alloc_error;
 use std::cell::RefCell;
 use std::fmt::{Display, Formatter, Pointer};
@@ -21,7 +21,7 @@ use std::hash::Hash;
 
 const GC_THRESHOLD: i64 = 100;
 
-// Thread safe list
+// Thread safe list_mod
 pub struct List<K: Copy + PartialOrd, V> {
     head: AtomicPtr<Node<K, V>>,
     lock: Arc<RwLock<()>>,
@@ -307,7 +307,7 @@ impl<K: Copy + PartialOrd, V> List<K, V> {
 
     // --------------------------private-----------------
 
-    // lock list stop other thread access until gc finish
+    // lock list_mod stop other thread access until gc finish
     fn gc(&self) -> i32 {
         let w_lock = self.lock.write().unwrap();
         let mut gc_count = 0;
@@ -435,9 +435,9 @@ impl<K: Copy + PartialOrd + Display, V: Clone + Display> Display for List<K, V> 
 
 #[cfg(test)]
 mod test {
-    use crate::simple_list::list;
-    use crate::simple_list::list::List;
-    use crate::simple_list::node::test::Item;
+    use crate::skip_list::list_mod::list;
+    use crate::skip_list::list_mod::list::List;
+    use crate::skip_list::list_mod::node::test::Item;
     use std::borrow::{Borrow, BorrowMut};
     use std::cell::RefCell;
     use std::env::temp_dir;
@@ -635,7 +635,7 @@ mod test {
     fn test_clean_delete_node() {
         let l = List::new();
 
-        // delete empty list
+        // delete empty list_mod
         l.delete(0);
         l.clean_deleted_node();
         assert_eq!(format!("{}", l), "");
