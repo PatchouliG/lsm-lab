@@ -474,7 +474,7 @@ mod test {
 
     #[test]
     fn test_50_times() {
-        for i in 0..5000 {
+        for i in 0..50 {
             test_multiple_write_and_read();
         }
     }
@@ -482,8 +482,9 @@ mod test {
     fn test_multiple_write_and_read() {
         let list = Arc::new(list::List::new());
         let mut joins = vec![];
+        let number = 100;
 
-        for i in 0..100 {
+        for i in 0..number {
             let list_clone = list.clone();
             // list_clone.add(i, i);
             let join = spawn(move || {
@@ -491,8 +492,16 @@ mod test {
             });
             joins.push(join);
         }
-        // overwrite
-        for i in (0..100).step_by(2) {
+
+        // wait
+        for j in joins {
+            j.join().unwrap();
+        }
+
+        // use thread to overwrite even key's value
+        let mut joins = vec![];
+
+        for i in (0..number).step_by(2) {
             let list_clone = list.clone();
             // list_clone.add(i, i);
             let join = spawn(move || {
@@ -501,11 +510,12 @@ mod test {
             joins.push(join);
         }
 
+        // wait for finish
         for j in joins {
             j.join().unwrap();
         }
 
-        for i in 0..100 {
+        for i in 0..number {
             if i % 2 == 0 {
                 assert_eq!(list.get(i).unwrap(), i * 100);
             } else {
