@@ -1,0 +1,21 @@
+name: Rust
+
+on:
+  push:
+    branches: [ all ]
+  pull_request:
+    branches: [ all ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: test all
+      run: sh test.sh
+
