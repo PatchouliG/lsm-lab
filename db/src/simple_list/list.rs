@@ -474,7 +474,7 @@ mod test {
 
     #[test]
     fn test_50_times() {
-        for i in 0..50 {
+        for i in 0..5000 {
             test_multiple_write_and_read();
         }
     }
