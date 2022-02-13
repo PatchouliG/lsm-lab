@@ -51,6 +51,9 @@ impl<K: Copy + PartialOrd, V> Node<K, V> {
     pub fn is_deleted(&self) -> bool {
         self.state.load(Ordering::SeqCst) > 0
     }
+    pub fn clean_delete(&self) {
+        self.state.store(0, Ordering::SeqCst);
+    }
     pub fn set_deleted(&mut self) {
         self.state.fetch_add(1, Ordering::SeqCst);
     }

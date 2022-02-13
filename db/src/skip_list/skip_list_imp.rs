@@ -26,13 +26,7 @@ struct SkipListImp<K: Copy + PartialOrd, V> {
     // not all level are in use
     levels: [Arc<List<K, Ref<K, V>>>; MAX_LEVEL],
     base: Arc<List<K, V>>,
-    // gc need stop all other thread
-    // gc thread: fetch write lock
-    // other thread: fetch read lock
     lock: RwLock<()>,
-    gc_lock: Mutex<()>,
-    delete_node_count: AtomicUsize,
-    delete_node_threshold: usize,
     current_max_level: AtomicUsize,
 }
 
@@ -81,11 +75,6 @@ impl<K: Copy + PartialOrd, V> Clone for Ref<K, V> {
 }
 
 impl<K: Copy + PartialOrd, V> SkipListImp<K, V> {
-    fn new_with_gc_threshold(threshold: usize) -> Self {
-        let mut res = Self::new();
-        res.delete_node_threshold = threshold;
-        res
-    }
     fn new() -> Self {
         let array = [
             Arc::new(List::new()),
@@ -107,16 +96,13 @@ impl<K: Copy + PartialOrd, V> SkipListImp<K, V> {
         ];
         SkipListImp {
             levels: array,
-            base: Arc::new(List::with_no_gc()),
+            base: Arc::new(List::new()),
             lock: RwLock::new(()),
-            gc_lock: Mutex::new(()),
             current_max_level: AtomicUsize::new(0),
-            delete_node_count: AtomicUsize::new(0),
-            delete_node_threshold: GC_THRESHOLD,
         }
     }
 
-    pub fn add(&self, key: K, value: V, rand_int: usize) {
+    fn add_internal(&self, key: K, value: V, rand_int: usize) {
         // read lock
         let read_lock = self.lock.read().unwrap();
         // call search
@@ -152,11 +138,8 @@ impl<K: Copy + PartialOrd, V> SkipListImp<K, V> {
         let search_result = self.search_node(key);
         // if found ,delete it
         search_result.delete_value();
-        self.delete_node_count.fetch_add(1, Ordering::SeqCst);
         // unlock for gc
         drop(read_lock);
-        // check if need gc
-        self.gc_when_necessary();
     }
     // search node level by level
     // return last node less or equal key, node next
@@ -220,35 +203,6 @@ impl<K: Copy + PartialOrd, V> SkipListImp<K, V> {
         }
         search_result
     }
-    // free deleted node
-    fn gc_when_necessary(&self) {
-        // check deleted node, return if not reach limit
-        if self.delete_node_count.load(Ordering::SeqCst) < self.delete_node_threshold {
-            return;
-        }
-        //    try lock gc lock, return if fail(gc is started)
-        if let Ok(lock) = self.gc_lock.try_lock() {
-            //     lock operation lock
-            let w_lock = self.lock.write();
-            //     start gc
-            self.clean_deleted_node();
-        }
-        self.delete_node_count.store(0, Ordering::SeqCst);
-    }
-
-    fn clean_deleted_node(&self) {
-        let level = self.base_level();
-        (level.borrow() as &List<K, V>).clean_deleted_node();
-        for level_number in (1..self.current_max_level() + 1).rev() {
-            let level = self.get_index_level(level_number);
-            let level = level.borrow() as &List<K, Ref<K, V>>;
-            level.clean_deleted_node();
-            // update level
-            if level.is_empty() {
-                self.current_max_level.fetch_sub(1, Ordering::SeqCst);
-            }
-        }
-    }
 
     fn len(&self) -> usize {
         self.base.len()
@@ -310,6 +264,7 @@ impl<K: Copy + PartialOrd, V: Clone> SkipListImp<K, V> {
 
 #[cfg(test)]
 mod test {
+    use crate::rand::simple_rand::Rand;
     use crate::skip_list::skip_list_imp::{max_level, SkipListImp, MAX_LEVEL};
     use std::borrow::{Borrow, BorrowMut};
     use std::sync::Arc;
@@ -346,36 +301,58 @@ mod test {
     #[ignore]
     fn test_single_bench() {}
     #[test]
-    #[ignore]
-    fn test_multiple_thread_read_write_remove() {}
-
-    #[test]
-    fn test_clean() {
-        let sk = build_list_for_test();
-        println!("{}", sk);
-        sk.remove(17);
-        sk.clean_deleted_node();
-        println!("{}", sk);
-
-        sk.remove(15);
-        println!("{}", sk);
-        sk.clean_deleted_node();
-        println!("{}", sk);
+    fn test_repeat_10() {
+        for i in 1..10 {
+            test_multiple_thread_read_write_remove();
+        }
     }
-    #[test]
-    fn test_gc() {
-        let sk = build_list_for_test_with_threshold(0);
-        assert_eq!(3, sk.current_max_level());
-        // remove one base node
-        sk.remove(6);
-        // remove all index level node
-        sk.remove(17);
-        sk.remove(15);
-        sk.remove(21);
-        assert_eq!(0, sk.current_max_level());
-        assert_eq!("(0:0:false)(2:1:false)(4:2:false)(8:4:false)(10:5:false)(12:6:false)(14:7:false)(16:8:false)(18:9:false)(20:10:false)(22:11:false)(24:12:false)(26:13:false)(28:14:false)(30:15:false)
-", format!("{}", sk));
+    fn test_multiple_thread_read_write_remove() {
+        let mut add_rand = Rand::with_seed(19);
+        let mut delete_rand = Rand::with_seed(234);
+        let mut get_rand = Rand::with_seed(234235);
+        let l = Arc::new(SkipListImp::new());
+
+        let number = 1000;
+
+        let mut joins = vec![];
+        // add
+        let list_clone = l.clone();
+        let join = spawn(move || {
+            for i in 0..number + 1 {
+                let key = add_rand.next() % number;
+                list_clone.add_internal(key, key, key as usize);
+            }
+        });
+        joins.push(join);
+
+        // get
+        let list_clone = l.clone();
+        let join = spawn(move || {
+            for i in 0..number + 1 {
+                let key = get_rand.next() % number;
+                let res = list_clone.get(key);
+                if let Some(value) = res {
+                    assert_eq!(value, key);
+                }
+            }
+        });
+        joins.push(join);
+
+        // remove
+        let list_clone = l;
+        let join = spawn(move || {
+            for i in 0..number + 1 {
+                let key = delete_rand.next() % number;
+                list_clone.remove(key);
+            }
+        });
+        joins.push(join);
+
+        for j in joins {
+            j.join().unwrap();
+        }
     }
+
     #[test]
     fn test_remove() {
         let sk = build_list_for_test();
@@ -414,30 +391,27 @@ mod test {
     }
 
     fn build_list_for_test() -> SkipListImp<i32, i32> {
-        build_list_for_test_with_threshold(1000)
-    }
-    fn build_list_for_test_with_threshold(threshold: usize) -> SkipListImp<i32, i32> {
-        let sk = SkipListImp::new_with_gc_threshold(threshold);
+        let sk = SkipListImp::new();
         for i in 0..16 {
-            sk.add(i * 2, i, 0);
+            sk.add_internal(i * 2, i, 0);
         }
-        sk.add(21, 21, 3);
-        sk.add(15, 20, 3);
-        sk.add(17, 20, 1);
+        sk.add_internal(21, 21, 3);
+        sk.add_internal(15, 20, 3);
+        sk.add_internal(17, 20, 1);
         sk
     }
 
     #[test]
     fn test_one_level_add_get() {
         let sk = SkipListImp::new();
-        sk.add(1, 1, 0);
+        sk.add_internal(1, 1, 0);
         let res = sk.get(1).unwrap();
         assert_eq!(res, 1);
-        sk.add(2, 2, 0);
+        sk.add_internal(2, 2, 0);
         let res = sk.get(2).unwrap();
         assert_eq!(res, 2);
         // overwrite
-        sk.add(2, 3, 0);
+        sk.add_internal(2, 3, 0);
         let res = sk.get(2).unwrap();
         assert_eq!(res, 3);
     }
@@ -448,7 +422,7 @@ mod test {
         for i in 0..2 {
             let mut t = sk.clone();
             let j = spawn(move || {
-                (t.borrow_mut() as &SkipListImp<i32, i32>).add(1, 2, 100);
+                (t.borrow_mut() as &SkipListImp<i32, i32>).add_internal(1, 2, 100);
             });
         }
     }
