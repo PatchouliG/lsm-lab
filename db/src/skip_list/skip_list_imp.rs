@@ -13,9 +13,10 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::ops::Add;
 use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 const MAX_LEVEL: usize = 16;
+const GC_THRESHOLD: usize = 1000;
 // todo wrap skipimp
 // struct SkipList<K: Copy + PartialOrd, V> {}
 
@@ -29,6 +30,9 @@ struct SkipListImp<K: Copy + PartialOrd, V> {
     // gc thread: fetch write lock
     // other thread: fetch read lock
     lock: RwLock<()>,
+    gc_lock: Mutex<()>,
+    delete_node_count: AtomicUsize,
+    delete_node_threshold: usize,
     current_max_level: AtomicUsize,
 }
 
@@ -77,6 +81,11 @@ impl<K: Copy + PartialOrd, V> Clone for Ref<K, V> {
 }
 
 impl<K: Copy + PartialOrd, V> SkipListImp<K, V> {
+    fn new_with_gc_threshold(threshold: usize) -> Self {
+        let mut res = Self::new();
+        res.delete_node_threshold = threshold;
+        res
+    }
     fn new() -> Self {
         let array = [
             Arc::new(List::new()),
@@ -100,7 +109,10 @@ impl<K: Copy + PartialOrd, V> SkipListImp<K, V> {
             levels: array,
             base: Arc::new(List::with_no_gc()),
             lock: RwLock::new(()),
+            gc_lock: Mutex::new(()),
             current_max_level: AtomicUsize::new(0),
+            delete_node_count: AtomicUsize::new(0),
+            delete_node_threshold: GC_THRESHOLD,
         }
     }
 
@@ -140,6 +152,7 @@ impl<K: Copy + PartialOrd, V> SkipListImp<K, V> {
         let search_result = self.search_node(key);
         // if found ,delete it
         search_result.delete_value();
+        self.delete_node_count.fetch_add(1, Ordering::SeqCst);
         // unlock for gc
         drop(read_lock);
         // check if need gc
@@ -207,14 +220,33 @@ impl<K: Copy + PartialOrd, V> SkipListImp<K, V> {
         }
         search_result
     }
-    fn gc_when_necessary(&self) {}
+    // free deleted node
+    fn gc_when_necessary(&self) {
+        // check deleted node, return if not reach limit
+        if self.delete_node_count.load(Ordering::SeqCst) < self.delete_node_threshold {
+            return;
+        }
+        //    try lock gc lock, return if fail(gc is started)
+        if let Ok(lock) = self.gc_lock.try_lock() {
+            //     lock operation lock
+            let w_lock = self.lock.write();
+            //     start gc
+            self.clean_deleted_node();
+        }
+        self.delete_node_count.store(0, Ordering::SeqCst);
+    }
 
     fn clean_deleted_node(&self) {
         let level = self.base_level();
         (level.borrow() as &List<K, V>).clean_deleted_node();
-        for level_number in 1..self.current_max_level() {
+        for level_number in (1..self.current_max_level() + 1).rev() {
             let level = self.get_index_level(level_number);
-            (level.borrow() as &List<K, Ref<K, V>>).clean_deleted_node();
+            let level = level.borrow() as &List<K, Ref<K, V>>;
+            level.clean_deleted_node();
+            // update level
+            if level.is_empty() {
+                self.current_max_level.fetch_sub(1, Ordering::SeqCst);
+            }
         }
     }
 
@@ -316,11 +348,6 @@ mod test {
     #[test]
     #[ignore]
     fn test_multiple_thread_read_write_remove() {}
-    #[test]
-    #[ignore]
-    fn test_gc() {
-        todo!()
-    }
 
     #[test]
     fn test_clean() {
@@ -334,6 +361,20 @@ mod test {
         println!("{}", sk);
         sk.clean_deleted_node();
         println!("{}", sk);
+    }
+    #[test]
+    fn test_gc() {
+        let sk = build_list_for_test_with_threshold(0);
+        assert_eq!(3, sk.current_max_level());
+        // remove one base node
+        sk.remove(6);
+        // remove all index level node
+        sk.remove(17);
+        sk.remove(15);
+        sk.remove(21);
+        assert_eq!(0, sk.current_max_level());
+        assert_eq!("(0:0:false)(2:1:false)(4:2:false)(8:4:false)(10:5:false)(12:6:false)(14:7:false)(16:8:false)(18:9:false)(20:10:false)(22:11:false)(24:12:false)(26:13:false)(28:14:false)(30:15:false)
+", format!("{}", sk));
     }
     #[test]
     fn test_remove() {
@@ -373,7 +414,10 @@ mod test {
     }
 
     fn build_list_for_test() -> SkipListImp<i32, i32> {
-        let sk = SkipListImp::new();
+        build_list_for_test_with_threshold(1000)
+    }
+    fn build_list_for_test_with_threshold(threshold: usize) -> SkipListImp<i32, i32> {
+        let sk = SkipListImp::new_with_gc_threshold(threshold);
         for i in 0..16 {
             sk.add(i * 2, i, 0);
         }

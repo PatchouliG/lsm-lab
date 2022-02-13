@@ -165,6 +165,8 @@ impl<K: Copy + PartialOrd, V> List<K, V> {
             let mut node_ptr = self.head.load(Ordering::SeqCst);
             loop {
                 if node_ptr.is_null() {
+                    // no node in this level, set head as null
+                    self.head.store(null_mut(), Ordering::SeqCst);
                     return;
                 }
                 let node = node_ptr.as_ref().unwrap();
@@ -305,10 +307,8 @@ impl<K: Copy + PartialOrd, V> List<K, V> {
         self.head.load(Ordering::SeqCst)
     }
 
-    // --------------------------private-----------------
-
     // lock list_mod stop other thread access until gc finish
-    fn gc(&self) -> i32 {
+    pub fn gc(&self) -> i32 {
         let w_lock = self.lock.write().unwrap();
         let mut gc_count = 0;
         // check if is null

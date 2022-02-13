@@ -19,9 +19,13 @@ paper，其他类似项目 todo
 ### 开发流程
 
 开发分支 dev-0.1
-1. 在github记录issue 原因，方案
+1. 简要在committee中给出方案，重要设计需要在留下文档记录
 2. 本地测试通过 
-3. 提交pr 进入开发分支
+3. 进入开发分支
+
+committee 格式
+[feature]/[test]/[benchmark]/[fix bug] {title 描述目的}
+{设计方案}
 
 测试流程
 
