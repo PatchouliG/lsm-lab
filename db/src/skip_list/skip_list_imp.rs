@@ -21,7 +21,7 @@ const GC_THRESHOLD: usize = 1000;
 // struct SkipList<K: Copy + PartialOrd, V> {}
 
 // todo need add arc,skip list_mod need thread safe
-struct SkipListImp<K: Copy + PartialOrd, V> {
+pub(in crate::skip_list) struct SkipListImp<K: Copy + PartialOrd, V> {
     // levels len is MAX_LEVEL
     // not all level are in use
     levels: [Arc<List<K, Ref<K, V>>>; MAX_LEVEL],
@@ -75,7 +75,7 @@ impl<K: Copy + PartialOrd, V> Clone for Ref<K, V> {
 }
 
 impl<K: Copy + PartialOrd, V> SkipListImp<K, V> {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let array = [
             Arc::new(List::new()),
             Arc::new(List::new()),
@@ -102,7 +102,7 @@ impl<K: Copy + PartialOrd, V> SkipListImp<K, V> {
         }
     }
 
-    fn add_internal(&self, key: K, value: V, rand_int: usize) {
+    pub(crate) fn add_internal(&self, key: K, value: V, rand_int: usize) {
         // read lock
         let read_lock = self.lock.read().unwrap();
         // call search
