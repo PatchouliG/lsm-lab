@@ -1,26 +1,20 @@
+use std::cell::RefMut;
 use std::cmp::Ordering;
+use std::io::{BufWriter, Cursor, Write};
 use std::marker::PhantomData;
 
+use crate::common::Key;
 use crate::common::{encode_kv, Value};
-use crate::common::{KV_iterator, Key};
 use crate::meta_manager::MetaManager;
 use crate::storage::{BlockMeta, StorageReader, StorageWriter};
-use std::cell::RefMut;
-use std::io::{BufWriter, Cursor, Write};
-
-trait Log<K: Key, V: Value> {
-    fn append(&mut self, key: K, value: V);
-    fn flush(&mut self);
-}
 
 // todo sstable file gc
-
 // a block based , immutable ,ordered list
-pub trait SStable<K: Key, V: Value, M: MetaManager> {
-    fn from_compact_sstables(meta: M, sstables: &dyn KV_iterator<K, V>) -> Self;
-    fn range_contain(&self, key: &K) -> bool;
-    fn find(&self, key: &K) -> Option<&V>;
-    fn to_iter(self) -> Box<dyn Iterator<Item = (K, V)>>;
+pub trait SStable<M: MetaManager> {
+    fn from_compact_sstables(meta: M, sstables: &dyn Iterator<Item = (Key, Value)>) -> Self;
+    fn range_contain(&self, key: &Key) -> bool;
+    fn find(&self, key: &Key) -> Option<&Value>;
+    fn to_iter(self) -> Box<dyn Iterator<Item = (Key, Value)>>;
 }
 
 // // sstable struct
@@ -31,11 +25,10 @@ pub trait SStable<K: Key, V: Value, M: MetaManager> {
 //     _________
 //     |meta block|
 // //
-struct SStableImp<K: Key, V: Value, SR: StorageReader> {
+struct SStableImp<SR: StorageReader> {
     storage_reader: SR,
-    v: PhantomData<V>,
     // sorted
-    block_metas: Vec<BlockMeta<K>>,
+    block_metas: Vec<BlockMeta>,
 }
 
 const FILE_SIZE: usize = 4 * 1024 * 1024;
@@ -49,19 +42,19 @@ const BLOCK_SIZE: usize = 4 * 1024;
 //         todo!()
 //     }
 // }
-impl<K: Key, V: Value, SR: StorageReader> SStableImp<K, V, SR> {
+impl<SR: StorageReader> SStableImp<SR> {
     pub fn new(storage_reader: SR) -> Self {
         // read and decode block meta from end
         todo!()
     }
-    fn encode_block_meta(metas: &Vec<BlockMeta<K>>) -> Vec<u8> {
+    fn encode_block_meta(metas: &Vec<BlockMeta>) -> Vec<u8> {
         todo!()
     }
-    fn decode_block_meta(v: &Vec<u8>) -> Vec<BlockMeta<K>> {
+    fn decode_block_meta(v: &Vec<u8>) -> Vec<BlockMeta> {
         todo!()
     }
     fn build_sstable<MM: MetaManager, SW: StorageWriter>(
-        mut iterator: Box<dyn Iterator<Item = (K, V)>>,
+        mut iterator: Box<dyn Iterator<Item = (Key, Value)>>,
         mm: MM,
         storage_writer: SW,
     ) {
@@ -82,7 +75,7 @@ impl<K: Key, V: Value, SR: StorageReader> SStableImp<K, V, SR> {
         // 6. update metaManager
         //</editor-fold>
     }
-    fn find(&self, k: K) -> Option<V> {
+    fn find(&self, k: &Key) -> Option<Value> {
         // get block
         // check block in cache, if not found get from storage ,decode it and update cache
         // binary search
@@ -90,32 +83,28 @@ impl<K: Key, V: Value, SR: StorageReader> SStableImp<K, V, SR> {
     }
 }
 
-struct SStableImpIter<K: Key, V: Value> {
-    k: PhantomData<K>,
-    v: PhantomData<V>,
-}
-impl<K: Key, V: Value> Iterator for SStableImpIter<K, V> {
-    type Item = (K, V);
+struct SStableImpIter {}
+impl Iterator for SStableImpIter {
+    type Item = (Key, Value);
 
     fn next(&mut self) -> Option<Self::Item> {
         todo!()
     }
 }
-impl<K: Key, V: Value> KV_iterator<K, V> for SStableImpIter<K, V> {}
 
 // impl<K: Key, V: Value, MM: MetaManager> SStable<K, V, MM> for SStableImp<K, V, MM> {
 //     fn from_compact_sstables(meta: MM, sstables: &dyn KV_iterator<K, V>) -> Self {
 //         todo!()
 //     }
 //
-//     fn range_contain(&self, key: &K) -> bool {
+//     fn range_contain(&self, key: &Key) -> bool {
 //         assert!(self.block_metas.len() > 0);
 //         let start = &self.block_metas.first().unwrap().start();
 //         let end = &self.block_metas.last().unwrap().end();
 //         key.ge(start) && key.lt(end)
 //     }
 //
-//     fn find(&self, key: &K) -> Option<&V> {
+//     fn find(&self, key: &Key) -> Option<&V> {
 //         todo!()
 //     }
 //
@@ -129,11 +118,11 @@ impl<K: Key, V: Value> KV_iterator<K, V> for SStableImpIter<K, V> {}
 //         todo!()
 //     }
 //
-//     fn range_contain(&self, key: &K) -> bool {
+//     fn range_contain(&self, key: &Key) -> bool {
 //         todo!()
 //     }
 //
-//     fn find(&self, key: &K) -> Option<&V> {
+//     fn find(&self, key: &Key) -> Option<&V> {
 //         todo!()
 //     }
 // }
@@ -147,11 +136,11 @@ impl<K: Key, V: Value> KV_iterator<K, V> for SStableImpIter<K, V> {}
 //         todo!()
 //     }
 //
-//     fn range_contain(&self, key: &K) -> bool {
+//     fn range_contain(&self, key: &Key) -> bool {
 //         todo!()
 //     }
 //
-//     fn find(&self, key: &K) -> Option<&V> {
+//     fn find(&self, key: &Key) -> Option<&V> {
 //         todo!()
 //     }
 // }

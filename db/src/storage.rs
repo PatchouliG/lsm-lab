@@ -4,7 +4,7 @@ use std::slice::SliceIndex;
 
 use derive_getters::{Dissolve, Getters};
 
-use crate::common::{convert_u8_array_to_usize, convert_usize_to_u8_array, Key, KeyImp, ValueImp};
+use crate::common::{convert_u8_array_to_usize, convert_usize_to_u8_array, Key, Value};
 use std::cmp::Ordering;
 
 const BUFFER_SIZE: usize = 8 * 4 * 1024;
@@ -14,24 +14,24 @@ pub trait EncoderWriter {
     fn flush(&mut self) -> std::io::Result<()>;
 }
 #[derive(Getters)]
-pub struct BlockMeta<K: Key> {
-    start: K,
-    end: K,
+pub struct BlockMeta {
+    start: Key,
+    end: Key,
     offset: usize,
 }
-impl<K: Key> BlockMeta<K> {
-    pub fn range(&self) -> (&K, &K) {
+impl BlockMeta {
+    pub fn range(&self) -> (&Key, &Key) {
         (&self.start, &self.end)
     }
 }
 
-impl<K: Key> PartialEq for BlockMeta<K> {
+impl PartialEq for BlockMeta {
     fn eq(&self, other: &Self) -> bool {
         self.start().eq(&other.start()) && (self.end().eq(&other.end()))
     }
 }
 
-impl<K: Key> PartialOrd for BlockMeta<K> {
+impl PartialOrd for BlockMeta {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.start().partial_cmp(&other.start())
     }
@@ -177,10 +177,10 @@ impl StorageWriter for StorageWriterImp {
     }
 }
 
-pub fn read<SR: StorageReader>(storage: SR, block_offset: usize) -> Vec<(KeyImp, ValueImp)> {
+pub fn read<SR: StorageReader>(storage: SR, block_offset: usize) -> Vec<(Key, Value)> {
     todo!()
 }
-pub fn read_meta<SR: StorageReader>(storage: &SR) -> Vec<BlockMeta<KeyImp>> {
+pub fn read_meta<SR: StorageReader>(storage: &SR) -> Vec<BlockMeta> {
     todo!()
 }
 
