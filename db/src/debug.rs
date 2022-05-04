@@ -7,13 +7,22 @@ mod debug_tmp {
     use std::fmt::Display;
 
     trait Test<A> {
-        type B;
-        fn foo(&self, a: A) -> B;
+        fn foo(&self, a: A) -> A;
     }
 
-    #[derive(Copy)]
-    struct B<'a> {
-        a: &'a i32,
+    struct B {
+        a: i32,
+    }
+
+    impl Test<i32> for TB {
+        fn foo(&self, a: i32) -> i32 {
+            a
+        }
+    }
+    impl Test<i32> for B {
+        fn foo(&self, a: i32) -> i32 {
+            todo!()
+        }
     }
 
     struct TB {
@@ -40,26 +49,9 @@ mod debug_tmp {
         }
     }
 
-    impl Test<i32> for TB {
-        type B = i32;
-
-        fn foo(&self, a: i32) -> B {
-            todo!()
-        }
-    }
-
     impl Test<u32> for TB {
-        type B = i32;
-
-        fn foo(&self, a: u32) -> B {
+        fn foo(&self, a: u32) -> u32 {
             todo!()
-        }
-    }
-
-    impl<'a> Clone for B<'a> {
-        fn clone(&self) -> Self {
-            todo!()
-            // B { a: self.a }
         }
     }
 
@@ -82,17 +74,18 @@ mod debug_tmp {
         use std::sync::{Arc, Mutex};
         use std::thread::spawn;
 
-        use crate::debug::debug_tmp::TB;
+        use crate::debug::debug_tmp::{Test, TB};
 
         use super::A;
+        fn test_test<T>(t: &dyn Test<T>, a: T) {
+            t.foo(a);
+        }
 
         #[test]
         fn test() {
-            let a = format!("{}:{}", 3, 4);
-            println!("{}", a);
-            let mut b = TB::new();
-            let c: Vec<u8> = vec![1, 23, 54];
-            b.append(c.as_ref());
+            let i = 32;
+            let tb = TB::new();
+            test_test(&tb, i);
         }
     }
 }

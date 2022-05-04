@@ -2,6 +2,21 @@ use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 
 use crate::storage::{DecoderReader, EncoderWriter};
+use std::io::Write;
+use std::marker::PhantomData;
+
+struct LRU_Cache<K, E: Clone> {
+    k: PhantomData<K>,
+    e: PhantomData<E>,
+}
+
+impl<K, E: Clone> LRU_Cache<K, E> {
+    fn put(&mut self, k: K, e: E) {}
+
+    fn get(&self, k: K) -> &E {
+        todo!()
+    }
+}
 
 pub trait Key: Clone + Ord + Hash {
     fn from_str(s: &str) -> Self;
@@ -16,6 +31,8 @@ pub trait Entry<K: Key, V: Value>: Sized {
     fn get_key(&self) -> K;
     fn get_value(&self) -> V;
 }
+
+pub trait KV_iterator<K: Key, V: Value>: Iterator<Item = (K, V)> {}
 
 const KEY_SIZE: usize = 32;
 
@@ -73,6 +90,22 @@ impl ValueImp {
     }
 }
 
+impl PartialEq for ValueImp {
+    fn eq(&self, other: &Self) -> bool {
+        if self.v.len() != other.v.len() {
+            return false;
+        }
+        for (i, v) in self.v.iter().enumerate() {
+            if v != other.v.get(i).unwrap() {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+impl Eq for ValueImp {}
+
 impl Value for ValueImp {
     fn from_str(s: &str) -> ValueImp {
         let mut v = Vec::new();
@@ -87,14 +120,14 @@ impl Value for ValueImp {
     }
 }
 
-pub fn encode(k: KeyImp, v: ValueImp, w: &mut EncoderWriter) {
-    w.write_size(k.bytes.len()).unwrap();
+pub fn encode_kv<EW: EncoderWriter>(k: KeyImp, v: ValueImp, w: &mut EW) {
+    w.write(&convert_usize_to_u8_array(k.bytes.len())).unwrap();
     w.write(&k.bytes).unwrap();
-    w.write_size(v.v.len()).unwrap();
+    w.write(&convert_usize_to_u8_array(v.v.len())).unwrap();
     w.write(&v.v).unwrap();
 }
 
-pub fn decode<DR: DecoderReader>(r: &mut DR) -> (KeyImp, ValueImp) {
+pub fn decode_kv<DR: DecoderReader>(r: &mut DR) -> (KeyImp, ValueImp) {
     let key_size = r.read_size();
     let key_content = r.read(key_size);
     let key = KeyImp::new(key_content);
@@ -103,10 +136,29 @@ pub fn decode<DR: DecoderReader>(r: &mut DR) -> (KeyImp, ValueImp) {
     let value = ValueImp::new(value_content);
     (key, value)
 }
+pub fn convert_u8_array_to_usize(s: &[u8]) -> usize {
+    let mut res: usize = 0;
+    let mut m: usize = 1;
+    for i in s {
+        let h = *i as usize;
+        res += h * m;
+        m *= 256;
+    }
+    res
+}
+pub fn convert_usize_to_u8_array(mut s: usize) -> [u8; 4] {
+    let mut res: [u8; 4] = [0, 0, 0, 0];
+    for i in 0..4 {
+        res[i] = (s % 256) as u8;
+        s = s / 256;
+    }
+    res
+}
 
 #[cfg(test)]
 mod test {
-    use crate::common::{Key, KeyImp, Value, ValueImp};
+    use crate::common::{decode_kv, encode_kv, Key, KeyImp, Value, ValueImp};
+    use crate::storage::{DecoderReaderMemoryImp, EncoderWriterMemoryImp};
 
     #[test]
     pub fn test_key() {
@@ -125,5 +177,17 @@ mod test {
     pub fn test_value() {
         let a = ValueImp::from_str("abc");
         assert_eq!("abc", a.to_str());
+    }
+    #[test]
+    pub fn test_encode_decode() {
+        let a = KeyImp::from_str("key");
+        let b = ValueImp::from_str("value");
+        let mut encode = EncoderWriterMemoryImp::new();
+        encode_kv(a.clone(), b.clone(), &mut encode);
+        let vec = encode.to_vec();
+        let mut decoder = DecoderReaderMemoryImp::new(vec);
+        let (c, d) = decode_kv(&mut decoder);
+        assert_eq!(a, c);
+        assert_eq!(b, d);
     }
 }
